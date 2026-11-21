@@ -141,7 +141,7 @@ namespace AmazingBot
             Console.WriteLine("  AmazingBot --screenshot         — сохранить скриншот окна игры в screenshot.bmp");
             Console.WriteLine("  AmazingBot --check-templates    — показать, какие шаблоны видны на экране");
             Console.WriteLine("  AmazingBot --record-route NAME  — записать маршрут (F10 — конец записи)");
-            Console.WriteLine("  AmazingBot --calibrate-beds     — выбрать грядки курсором (Insert — сохранить точку, End — конец)");
+            Console.WriteLine("  AmazingBot --calibrate-beds     — отметить грядки кликами на превью окна игры");
             Console.WriteLine("  AmazingBot --config PATH        — использовать указанный config.json");
             Console.WriteLine();
             Console.WriteLine("F12 — экстренная остановка бота в любой момент.");

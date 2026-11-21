@@ -36,7 +36,7 @@ namespace AmazingBot.Ui
                 Console.WriteLine(" 1) Запустить бота");
                 Console.WriteLine(" 2) Один проход по грядкам (проверка настройки)");
                 Console.WriteLine(" 3) Записать маршрут (к бочке / к машине)");
-                Console.WriteLine(" 4) Выбрать грядки курсором (Insert — точка, End — закончить)");
+                Console.WriteLine(" 4) Отметить грядки на превью окна игры");
                 Console.WriteLine(" 5) Сохранить скриншот окна игры (screenshot.bmp)");
                 Console.WriteLine(" 6) Проверить шаблоны на экране");
                 Console.WriteLine(" 7) Настройки (интервал, режим, анти-афк, авто-отключение, полив)");
@@ -143,69 +143,38 @@ namespace AmazingBot.Ui
         public void CalibrateBeds()
         {
             var vision = CreateVision();
-            if (!vision.Refresh())
+            if (!vision.Refresh() || vision.Current == null)
             {
                 Console.WriteLine("Окно игры не найдено — сначала запустите игру в оконном режиме.");
-                return;
-            }
-            Console.WriteLine("Текущих грядок в конфиге: " + _cfg.Beds.Count + ". Они будут ЗАМЕНЕНЫ новым списком.");
-                Console.WriteLine("Наведите курсор на центр грядки и нажмите Insert. End — закончить. Каждая точка сохраняется сразу; F8 не используется (в игре это скриншот).");
-            Console.WriteLine("Enter для старта...");
-            Console.ReadLine();
-
-            var beds = new List<BedPoint>();
-            bool pointKeyWasDown = false;
-            int index = 0;
-            while (true)
-            {
-                if (NativeMethods.KeyDown(NativeMethods.VK_END))
-                    break;
-                bool pointKeyDown = NativeMethods.KeyDown(NativeMethods.VK_INSERT);
-                if (pointKeyDown && !pointKeyWasDown)
-                {
-                    Native.POINT p = ScreenCapture.GetCursorPosition();
-                    int relX = p.X - vision.ClientOriginX;
-                    int relY = p.Y - vision.ClientOriginY;
-                    if (relX >= 0 && relY >= 0 && relX < vision.ClientWidth && relY < vision.ClientHeight)
-                    {
-                        BedPoint? duplicate = beds.FirstOrDefault(b =>
-                        {
-                            long dx = (long)b.X - relX;
-                            long dy = (long)b.Y - relY;
-                            return dx * dx + dy * dy < 25L * 25L;
-                        });
-                        if (duplicate != null)
-                        {
-                            Console.WriteLine("Точка слишком близко к " + duplicate.Name + " — похоже, это та же грядка, повтор пропущен.");
-                        }
-                        else
-                        {
-                            index++;
-                            beds.Add(new BedPoint { Name = "bed" + index, X = relX, Y = relY });
-                            _cfg.Beds = new List<BedPoint>(beds);
-                            ConfigService.Save(_configPath, _cfg, _log);
-                            _log.Info("Точка bed" + index + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
-                            Console.WriteLine("Сохранена точка bed" + index + ". Всего: " + index + ". Продолжайте Insert, закончить — End.");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine("Курсор вне окна игры — точка не сохранена.");
-                    }
-                }
-                pointKeyWasDown = pointKeyDown;
-                Thread.Sleep(25);
-            }
-
-            if (beds.Count == 0)
-            {
-                Console.WriteLine("Ни одной точки не сохранено — конфиг не изменён.");
                 Pause();
                 return;
             }
-            _cfg.Beds = beds;
-            ConfigService.Save(_configPath, _cfg, _log);
-            Console.WriteLine("Сохранено грядок: " + beds.Count + ". Не забудьте переименовать bed1..bedN в config.json, если нужно.");
+
+            Console.WriteLine("Откроется снимок текущего игрового окна.");
+            Console.WriteLine("В отдельном окне щёлкните по центру каждой грядки, проверьте пронумерованные метки и нажмите «Сохранить точки».");
+            if (_cfg.Beds.Count > 0)
+                Console.WriteLine("Текущий список из " + _cfg.Beds.Count + " грядок будет заменён только после подтверждения в окне.");
+
+            System.Windows.Forms.Application.EnableVisualStyles();
+            using (var picker = new BedMarkerForm(vision.Current.Image))
+            {
+                if (picker.ShowDialog() != System.Windows.Forms.DialogResult.OK || picker.Points.Count == 0)
+                {
+                    Console.WriteLine("Захват отменён — прежний список не изменён.");
+                    Pause();
+                    return;
+                }
+
+                var beds = new List<BedPoint>();
+                for (int i = 0; i < picker.Points.Count; i++)
+                {
+                    var point = picker.Points[i];
+                    beds.Add(new BedPoint { Name = "bed" + (i + 1), X = point.X, Y = point.Y });
+                }
+                _cfg.Beds = beds;
+                ConfigService.Save(_configPath, _cfg, _log);
+                Console.WriteLine("Сохранено грядок: " + beds.Count + ". Координаты указателя игры не использовались.");
+            }
             Pause();
         }
 

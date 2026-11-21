@@ -6,11 +6,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Timer = System.Windows.Forms.Timer;
 using AmazingBot.Config;
 using AmazingBot.Core;
 using AmazingBot.Input;
 using AmazingBot.Native;
+using AmazingBot.Ui;
 using AmazingBot.Vision;
 
 namespace AmazingBot.App
@@ -45,16 +45,7 @@ namespace AmazingBot.App
 
         // Вкладка «Грядки»
         private ListView _bedsList = null!;
-        private Label _captureHint = null!;
-        private Button _finishCaptureButton = null!;
-        private Timer _captureTimer = null!;
-        private bool _capturing;
-        private bool _capturePointKeyWasDown;
-        private VisionService? _captureVision;
-        private int _captureOriginX;
-        private int _captureOriginY;
-        private int _captureWidth;
-        private int _captureHeight;
+        // Bed picker writes image-relative points; no cursor hotkey polling is used in the GUI.
 
         // Вкладка «Маршруты»
         private ComboBox _routeNameCombo = null!;
@@ -521,20 +512,11 @@ namespace AmazingBot.App
             var info = new Label
             {
                 Dock = DockStyle.Fill,
-                Text = "Захват без скриншотов: нажмите «Начать захват», наведите курсор на центр грядки в игре и нажмите Insert. Повторите для каждой; точка сразу появится в списке и сохранится. Кнопка «Закончить» или клавиша End завершает захват. F8 игры не используется."
+                Padding = new Padding(12, 8, 12, 8),
+                Text = "Выбрать грядки: нажмите «Отметить грядки на превью», затем щёлкните по центру каждой грядки. Проверьте номера и нажмите «Сохранить точки». Это обходит блокировку курсора в игре. F8 не используется."
             };
-            _captureHint = new Label
-            {
-                Dock = DockStyle.Fill,
-                Text = "",
-                ForeColor = Color.Firebrick,
-                Font = new Font(Font, FontStyle.Bold),
-                Visible = false
-            };
-            var infoPanel = new Panel { Dock = DockStyle.Fill };
-            infoPanel.Controls.Add(_captureHint);
+            var infoPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
             infoPanel.Controls.Add(info);
-            _captureHint.BringToFront();
 
             _bedsList = new ListView
             {
@@ -549,12 +531,8 @@ namespace AmazingBot.App
             _bedsList.Columns.Add("Y (от окна)", 130);
 
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-            var captureBtn = new Button { Text = "● Начать захват (Insert: точка)", AutoSize = true, Height = 34 };
-            captureBtn.Click += (s, e) => StartCapture();
-            _finishCaptureButton = new Button { Text = "Закончить захват", AutoSize = true, Height = 34, Enabled = false };
-            _finishCaptureButton.Click += (s, e) => StopCapture();
-            var autoDetectBtn = new Button { Text = "Автопоиск по образцу (дополнительно)…", AutoSize = true, Height = 34 };
-            autoDetectBtn.Click += async (s, e) => await AutoDetectBedsAsync();
+            var markBedsBtn = new Button { Text = "✦ Отметить грядки на превью…", AutoSize = true, Height = 34 };
+            markBedsBtn.Click += (s, e) => SelectBedsOnPreview();
             var renameBtn = new Button { Text = "Переименовать", AutoSize = true, Height = 34 };
             renameBtn.Click += (s, e) => RenameSelectedBed();
             var deleteBtn = new Button { Text = "Удалить выбранное", AutoSize = true, Height = 34 };
@@ -563,9 +541,7 @@ namespace AmazingBot.App
             clearBtn.Click += (s, e) => ClearBeds();
             var saveBtn = new Button { Text = "Сохранить грядки", AutoSize = true, Height = 34 };
             saveBtn.Click += (s, e) => SaveBeds();
-            buttons.Controls.Add(captureBtn);
-            buttons.Controls.Add(_finishCaptureButton);
-            buttons.Controls.Add(autoDetectBtn);
+            buttons.Controls.Add(markBedsBtn);
             buttons.Controls.Add(renameBtn);
             buttons.Controls.Add(deleteBtn);
             buttons.Controls.Add(clearBtn);
@@ -576,8 +552,6 @@ namespace AmazingBot.App
             layout.Controls.Add(buttons, 0, 2);
             page.Controls.Add(layout);
 
-            _captureTimer = new Timer { Interval = 25 };
-            _captureTimer.Tick += OnCaptureTick;
             return page;
         }
 
@@ -963,185 +937,37 @@ namespace AmazingBot.App
 
         // ==================== Грядки ====================
 
-        private async Task AutoDetectBedsAsync()
+        private void SelectBedsOnPreview()
         {
-            if (_botRunning || _recording || _capturing) return;
+            if (_botRunning || _recording) return;
             if (_beds.Count > 0 && MessageBox.Show(
-                    "Автопоиск заменит текущий список из " + _beds.Count + " грядок. Продолжить?",
-                    "Автопоиск грядок", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    "Новые метки заменят текущий список из " + _beds.Count + " грядок. Продолжить?",
+                    "Выбор грядок", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
             SaveAllSettings();
             var vision = CreateVision();
             if (!vision.Refresh() || vision.Current == null)
             {
-                MessageBox.Show("Не найдено окно игры. Запустите игру в оконном режиме и проверьте заголовок в настройках.", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Окно игры не найдено. Оставьте игру открытой в оконном режиме и проверьте заголовок в настройках.", "Выбор грядок", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            BitmapImage frame = vision.Current.Image;
-            using (var selector = new CropSelectorForm(frame, "образец одной грядки"))
+            using (var picker = new BedMarkerForm(vision.Current.Image))
             {
-                if (selector.ShowDialog(this) != DialogResult.OK) return;
-                Rectangle area = selector.SelectedCrop;
-                if (area.Width < 12 || area.Height < 12)
-                {
-                    MessageBox.Show("Выделение слишком маленькое. Обведите центральную область грядки (не фон и не панель интерфейса).", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                // Keep the example compact so matching stays responsive on full-HD screenshots.
-                int sampleWidth = Math.Min(area.Width, 80);
-                int sampleHeight = Math.Min(area.Height, 80);
-                int sampleX = area.X + (area.Width - sampleWidth) / 2;
-                int sampleY = area.Y + (area.Height - sampleHeight) / 2;
-                BitmapImage bedSample = frame.Crop(sampleX, sampleY, sampleWidth, sampleHeight);
-                List<Match> matches;
-                UseWaitCursor = true;
-                try
-                {
-                    double threshold = Math.Max(0.84, _cfg.MatchThreshold);
-                    matches = await Task.Run(() => TemplateMatcher.FindAll(frame, bedSample, threshold, 100));
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show("Автопоиск не завершился: " + ex.Message, "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-                finally
-                {
-                    UseWaitCursor = false;
-                }
-
-                if (matches.Count == 0)
-                {
-                    MessageBox.Show("Похожих грядок не найдено. Повторите поиск и обведите меньшую, более уникальную область внутри грядки.", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-
-                using (var review = new MatchReviewForm(frame, matches))
-                {
-                    if (review.ShowDialog(this) != DialogResult.OK) return;
-                }
+                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                if (picker.Points.Count == 0) return;
 
                 _beds.Clear();
-                int index = 1;
-                foreach (Match match in matches.OrderBy(m => m.Y).ThenBy(m => m.X))
+                for (int i = 0; i < picker.Points.Count; i++)
                 {
-                    _beds.Add(new BedPoint
-                    {
-                        Name = "bed" + index++,
-                        X = match.X + match.Width / 2,
-                        Y = match.Y + match.Height / 2
-                    });
+                    Point point = picker.Points[i];
+                    _beds.Add(new BedPoint { Name = "bed" + (i + 1), X = point.X, Y = point.Y });
                 }
                 ReloadBedsList();
                 SaveBeds();
-                _log.Info("Автопоиск завершён: распознано и сохранено грядок — " + _beds.Count);
-                MessageBox.Show("Готово: найдено и сохранено грядок — " + _beds.Count + ". Проверьте список и положение рамок на превью перед запуском бота.", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-        }
-
-        private void StartCapture()
-        {
-            if (_capturing) return;
-            var vision = CreateVision();
-            if (!vision.Refresh())
-            {
-                MessageBox.Show(
-                    "Окно игры не найдено. Запустите Amazing Online в оконном режиме.\nЕсли заголовок окна изменился — поправьте «Заголовок окна игры» на вкладке «Настройки».",
-                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            _captureVision = vision;
-            _captureOriginX = vision.ClientOriginX;
-            _captureOriginY = vision.ClientOriginY;
-            _captureWidth = vision.ClientWidth;
-            _captureHeight = vision.ClientHeight;
-
-            if (_beds.Count > 0)
-            {
-                DialogResult replace = MessageBox.Show(
-                    "В конфиге уже есть " + _beds.Count + " грядок. Заменить их новым набором точек?",
-                    "AmazingBot", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                if (replace != DialogResult.Yes)
-                    return;
-            }
-
-            _beds.Clear();
-            ReloadBedsList();
-            SaveBeds();
-            _capturing = true;
-            _capturePointKeyWasDown = false;
-            _finishCaptureButton.Enabled = true;
-            _captureHint.Text = "ЗАХВАТ АКТИВЕН: наведите курсор на центр грядки и нажмите Insert. End или «Закончить захват» — готово. Каждая точка сохраняется сразу.";
-            _captureHint.Visible = true;
-            _captureTimer.Start();
-            _log.Info("Захват грядок: наведение на центр + Insert добавляет точку; End или кнопка завершает. Сохранение выполняется сразу.");
-        }
-
-        private void OnCaptureTick(object? sender, EventArgs e)
-        {
-            if (!_capturing) return;
-            if (NativeMethods.KeyDown(NativeMethods.VK_END))
-            {
-                StopCapture();
-                return;
-            }
-            bool pointKeyDown = NativeMethods.KeyDown(NativeMethods.VK_INSERT);
-            if (pointKeyDown && !_capturePointKeyWasDown)
-            {
-                Native.POINT p = ScreenCapture.GetCursorPosition();
-                int relX = p.X - _captureOriginX;
-                int relY = p.Y - _captureOriginY;
-                if (relX < 0 || relY < 0 || relX >= _captureWidth || relY >= _captureHeight)
-                {
-                    _log.Warn("Курсор вне окна игры — точка не добавлена. Наведите его на грядку и нажмите Insert.");
-                }
-                else
-                {
-                    BedPoint? duplicate = _beds.FirstOrDefault(b =>
-                    {
-                        long dx = (long)b.X - relX;
-                        long dy = (long)b.Y - relY;
-                        return dx * dx + dy * dy < 25L * 25L;
-                    });
-                    if (duplicate != null)
-                    {
-                        _log.Warn("Точка слишком близко к " + duplicate.Name + " (менее 25 px) — вероятно, это та же грядка. Не добавляю повтор. Наведитесь на центр другой грядки.");
-                        _captureHint.Text = "Похоже, это уже " + duplicate.Name + " — точка не добавлена. Наведитесь на центр другой грядки.";
-                    }
-                    else
-                    {
-                        string name = "bed" + (_beds.Count + 1);
-                        _beds.Add(new BedPoint { Name = name, X = relX, Y = relY });
-                        ReloadBedsList();
-                        SaveBeds(); // persist each point immediately; finishing capture is not required for saving
-                        _log.Info("Точка " + name + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
-                        _captureHint.Text = "Добавлена " + name + " (" + _beds.Count + " всего). Наведитесь на следующую грядку и нажмите Insert; закончить — End или кнопкой.";
-                    }
-                }
-            }
-            _capturePointKeyWasDown = pointKeyDown;
-        }
-
-        private void StopCapture()
-        {
-            _capturing = false;
-            _captureTimer.Stop();
-            _finishCaptureButton.Enabled = false;
-            _captureHint.Visible = false;
-            _captureHint.Text = string.Empty;
-            if (_beds.Count > 0)
-            {
-                SaveBeds();
-                MessageBox.Show(
-                    "Захват завершён. Сохранено грядок: " + _beds.Count + ". Каждая точка сохранялась сразу.",
-                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            else
-            {
-                _log.Warn("Захват завершён без точек — конфиг не изменён");
+                _log.Info("С превью захвачено и сохранено грядок: " + _beds.Count);
+                MessageBox.Show("Сохранено грядок: " + _beds.Count + ". Проверьте список и не меняйте положение/масштаб камеры до запуска бота.", "Выбор грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
