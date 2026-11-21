@@ -1,5 +1,8 @@
 name: build-windows
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ main, arena/dfd52b60-fyiuj ]
