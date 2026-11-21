@@ -8,7 +8,8 @@
   "profession": {
     "mode": "mining",
     "route": "mine_cycle",
-    "cycleDelayMs": 1000
+    "cycleDelayMs": 1000,
+    "autoKeyPrompt": true
   },
 
   "antiAfk": {

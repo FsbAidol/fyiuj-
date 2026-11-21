@@ -254,6 +254,10 @@ namespace AmazingBot.Config
         /// <summary>Pause between repeated route cycles.</summary>
         [JsonPropertyName("cycleDelayMs")]
         public int CycleDelayMs { get; set; } = 1000;
+
+        /// <summary>Read the active key prompt from the bottom HUD strip and press it automatically.</summary>
+        [JsonPropertyName("autoKeyPrompt")]
+        public bool AutoKeyPrompt { get; set; } = true;
     }
 
     public sealed class BotConfig

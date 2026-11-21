@@ -35,6 +35,7 @@ namespace AmazingBot.App
         private Button _startButton = null!;
         private Button _stopButton = null!;
         private CheckBox _antiAfkCheck = null!;
+        private CheckBox _autoKeyPromptCheck = null!;
 
         // Маршруты
         private ComboBox _routeNameCombo = null!;
@@ -175,18 +176,20 @@ namespace AmazingBot.App
             var desc = new Label
             {
                 Dock = DockStyle.Fill,
-                Text = "Шахта · рыбалка удочкой · рыбалка сетью. Бот повторяет записанный цикл. Экранный подсветчик ищет руды по образцу, но не видит их сквозь стены. F12 — стоп бота, F11 — закрыть подсветчик."
+                Text = "Шахта · рыбалка удочкой · рыбалка сетью. Автонажатие QTE распознаёт одну клавишу в жёлтой полосе нижней части экрана; неоднозначные подсказки пропускаются. Подсветчик руды работает только по видимому образцу, не сквозь стены. F12 — стоп бота, F11 — закрыть подсветчик."
             };
             descGroup.Controls.Add(desc);
 
             var quickGroup = new GroupBox { Text = "Поведение", Dock = DockStyle.Fill, Padding = new Padding(10) };
             var quickFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
             _antiAfkCheck = new CheckBox { Text = "Анти-афк", AutoSize = true, Margin = new Padding(4, 12, 20, 4), Checked = true };
+            _autoKeyPromptCheck = new CheckBox { Text = "Автонажатие подсказок", AutoSize = true, Margin = new Padding(4, 12, 16, 4), Checked = true };
             var saveQuick = new Button { Text = "Сохранить", Width = 120, Height = 34, Margin = new Padding(4, 8, 4, 4) };
             saveQuick.Click += (s, e) => SaveAllSettings();
             var oreOverlayButton = new Button { Text = "Подсветка руды", Width = 150, Height = 34, Margin = new Padding(12, 8, 4, 4) };
             oreOverlayButton.Click += (s, e) => ShowOreOverlay();
             quickFlow.Controls.Add(_antiAfkCheck);
+            quickFlow.Controls.Add(_autoKeyPromptCheck);
             quickFlow.Controls.Add(saveQuick);
             quickFlow.Controls.Add(oreOverlayButton);
             quickGroup.Controls.Add(quickFlow);
@@ -694,6 +697,7 @@ namespace AmazingBot.App
             _afkIntervalBox.Value = Math.Min(_afkIntervalBox.Maximum, Math.Max(_afkIntervalBox.Minimum, _cfg.AntiAfk.IntervalSeconds));
             _afkKeysBox.Text = string.Join(" + ", _cfg.AntiAfk.Keys);
             _antiAfkCheck.Checked = _cfg.AntiAfk.Enabled;
+            _autoKeyPromptCheck.Checked = _cfg.Profession?.AutoKeyPrompt ?? true;
             int logIndex = _logLevelCombo.Items.IndexOf(_cfg.LogLevel);
             _logLevelCombo.SelectedIndex = logIndex >= 0 ? logIndex : 0;
         }
@@ -706,6 +710,7 @@ namespace AmazingBot.App
                 : _professionModeCombo.SelectedIndex == 2 ? "fishing_net" : "mining";
             _cfg.Profession.Route = _professionRouteBox.Text.Trim();
             _cfg.Profession.CycleDelayMs = (int)_professionDelayBox.Value;
+            _cfg.Profession.AutoKeyPrompt = _autoKeyPromptCheck.Checked;
             _cfg.AntiAfk.Enabled = _antiAfkCheck.Checked;
             _cfg.AntiAfk.IntervalSeconds = (int)_afkIntervalBox.Value;
             _cfg.AntiAfk.Keys = _afkKeysBox.Text

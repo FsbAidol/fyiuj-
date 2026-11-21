@@ -89,17 +89,18 @@ namespace AmazingBot.Input
         /// Проиграть маршрут. originX/originY — текущий угол клиентской области окна игры.
         /// shouldStop — проверка паник-клавиши (F12) между шагами.
         /// </summary>
-        public static bool Play(RouteFile route, int originX, int originY, int interStepDelayMs, Logger log, Func<bool>? shouldStop)
+        public static bool Play(RouteFile route, int originX, int originY, int interStepDelayMs, Logger log, Func<bool>? shouldStop, Action? backgroundCheck = null)
         {
             log.Info("Играю маршрут «" + route.Name + "» (" + route.Steps.Count + " шагов)");
             foreach (RouteStep step in route.Steps)
             {
+                backgroundCheck?.Invoke();
                 if (shouldStop != null && shouldStop())
                 {
                     log.Warn("Маршрут «" + route.Name + "» прерван по паник-клавише");
                     return false;
                 }
-                SleepInterruptible(step.DelayMs, shouldStop);
+                SleepInterruptible(step.DelayMs, shouldStop, backgroundCheck);
                 if (shouldStop != null && shouldStop()) return false;
 
                 int absX = originX + step.X;
@@ -119,7 +120,7 @@ namespace AmazingBot.Input
                         if (!string.IsNullOrEmpty(step.Key))
                         {
                             Keyboard.Down(step.Key);
-                            SleepInterruptible(Math.Max(20, step.DurationMs), shouldStop);
+                            SleepInterruptible(Math.Max(20, step.DurationMs), shouldStop, backgroundCheck);
                             Keyboard.Up(step.Key);
                         }
                         break;
@@ -129,18 +130,19 @@ namespace AmazingBot.Input
                         log.Warn("Неизвестный тип шага маршрута: " + step.Type);
                         break;
                 }
-                SleepInterruptible(interStepDelayMs, shouldStop);
+                SleepInterruptible(interStepDelayMs, shouldStop, backgroundCheck);
             }
             return true;
         }
 
-        private static void SleepInterruptible(int ms, Func<bool>? shouldStop)
+        private static void SleepInterruptible(int ms, Func<bool>? shouldStop, Action? backgroundCheck)
         {
             int remaining = ms;
             while (remaining > 0)
             {
                 if (shouldStop != null && shouldStop())
                     return;
+                backgroundCheck?.Invoke();
                 int slice = Math.Min(remaining, 40);
                 Thread.Sleep(slice);
                 remaining -= slice;
@@ -342,6 +344,10 @@ namespace AmazingBot.Input
             switch (vk)
             {
                 case 0x20: return "Space";
+                case 0xA0: return "Shift";
+                case 0x10: return "Shift";
+                case 0xA4: return "Alt";
+                case 0x12: return "Alt";
                 case 0x0D: return "Enter";
                 case 0x1B: return "Escape";
                 case 0x09: return "Tab";

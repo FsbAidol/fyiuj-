@@ -6,7 +6,7 @@ namespace AmazingBot.Input
     /// <summary>
     /// Клавиатура через SendInput. Имена клавиш регистронезависимы:
     /// "F1".."F12", "A".."Z", "0".."9", "Space", "Enter", "Escape", "Tab",
-    /// "Left", "Right", "Up", "Down", "Backspace", "Delete", "Home", "End".
+    /// "Left", "Right", "Up", "Down", "Alt", "Shift", "Backspace", "Delete", "Home", "End".
     /// </summary>
     public static class Keyboard
     {
@@ -106,6 +106,10 @@ namespace AmazingBot.Input
             map["DOWN"] = 0x28;
             map["PAGEUP"] = 0x21;
             map["PAGEDOWN"] = 0x22;
+            map["SHIFT"] = 0xA0; // VK_LSHIFT
+            map["LEFTSHIFT"] = 0xA0;
+            map["ALT"] = 0xA4; // VK_LMENU
+            map["LEFTALT"] = 0xA4;
             // Раскладка по-русски / по-английски для удобства
             map["ПРОБЕЛ"] = 0x20;
             map["ВВОД"] = 0x0D;

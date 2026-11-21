@@ -13,4 +13,8 @@
     <Description>Бот для Amazing Online: записываемые циклы шахты и рыбалки, анти-афк</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.2428" />
+  </ItemGroup>
+
 </Project>

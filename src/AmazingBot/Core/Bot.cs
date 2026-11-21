@@ -14,6 +14,7 @@ namespace AmazingBot.Core
         private readonly Logger _log;
         private readonly VisionService _vision;
         private readonly AntiAfkTask _antiAfk;
+        private readonly KeyPromptTask _keyPrompt;
         private volatile bool _externalStop;
 
         public Bot(BotConfig cfg, string configPath, Logger log)
@@ -29,6 +30,7 @@ namespace AmazingBot.Core
             };
             var context = new BotContext(cfg, _vision, log, state, IsPanic);
             _antiAfk = new AntiAfkTask(context);
+            _keyPrompt = new KeyPromptTask(cfg.WindowTitleContains, System.IO.Path.GetFullPath(cfg.TemplatesDir), log, IsPanic, cfg.Profession?.AutoKeyPrompt ?? true);
         }
 
         /// <summary>Внешняя остановка (кнопка «Стоп» в GUI). Эквивалентна F12.</summary>
@@ -56,7 +58,14 @@ namespace AmazingBot.Core
                 _log.Error("Окно игры не найдено. Заголовок должен содержать «" + _cfg.WindowTitleContains + "» (windowTitleContains).");
                 return 3;
             }
-            return new ProfessionTask(_cfg, _vision, _log, IsPanic, _antiAfk.CheckIfDue).Run(once);
+            return new ProfessionTask(_cfg, _vision, _log, IsPanic, BackgroundCheck).Run(once);
+        }
+
+        private void BackgroundCheck()
+        {
+            _antiAfk.CheckIfDue();
+            if (_cfg.Profession?.AutoKeyPrompt != false)
+                _keyPrompt.CheckIfDue();
         }
     }
 }

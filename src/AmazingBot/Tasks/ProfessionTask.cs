@@ -73,7 +73,8 @@ namespace AmazingBot.Tasks
                     _vision.ClientOriginY,
                     _config.Timing.InterStepDelayMs,
                     _log,
-                    _shouldStop);
+                    _shouldStop,
+                    _backgroundCheck);
                 if (!completed || _shouldStop())
                     break;
 

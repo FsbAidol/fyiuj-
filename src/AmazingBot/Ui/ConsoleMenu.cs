@@ -138,6 +138,7 @@ namespace AmazingBot.Ui
                 Console.WriteLine(" 2) Маршрут: " + _cfg.Profession.Route);
                 Console.WriteLine(" 3) Пауза между циклами: " + _cfg.Profession.CycleDelayMs + " мс");
                 Console.WriteLine(" 4) Анти-афк: " + (_cfg.AntiAfk.Enabled ? "вкл" : "выкл") + " | интервал " + _cfg.AntiAfk.IntervalSeconds + " с");
+                Console.WriteLine(" 5) Автонажатие QTE-подсказок: " + (_cfg.Profession.AutoKeyPrompt ? "вкл" : "выкл"));
                 Console.WriteLine(" 0) Назад");
                 Console.Write("Выбор: ");
                 string choice = (Console.ReadLine() ?? string.Empty).Trim();
@@ -169,6 +170,10 @@ namespace AmazingBot.Ui
                             _cfg.AntiAfk.IntervalSeconds = afk;
                         changed = true;
                         break;
+                    case "5":
+                        _cfg.Profession.AutoKeyPrompt = !_cfg.Profession.AutoKeyPrompt;
+                        changed = true;
+                        break;
                     case "0":
                         return;
                 }
@@ -186,6 +191,7 @@ namespace AmazingBot.Ui
             Console.WriteLine("Окно: заголовок содержит «" + _cfg.WindowTitleContains + "»");
             Console.WriteLine("Профессия: " + (_cfg.Profession?.Mode ?? "mining") + " | маршрут: " + (_cfg.Profession?.Route ?? ""));
             Console.WriteLine("Пауза цикла: " + (_cfg.Profession?.CycleDelayMs ?? 1000) + " мс");
+            Console.WriteLine("Автонажатие QTE: " + (_cfg.Profession?.AutoKeyPrompt == true ? "вкл" : "выкл"));
             Console.WriteLine("Анти-афк: " + (_cfg.AntiAfk.Enabled ? "вкл, раз в " + _cfg.AntiAfk.IntervalSeconds + " с" : "выкл"));
             if (Directory.Exists(_cfg.RoutesDir))
                 Console.WriteLine("Маршруты: " + string.Join(", ", Directory.GetFiles(_cfg.RoutesDir, "*.json").Select(Path.GetFileNameWithoutExtension)));
