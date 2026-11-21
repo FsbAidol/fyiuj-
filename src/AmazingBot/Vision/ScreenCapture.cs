@@ -89,7 +89,7 @@ namespace AmazingBot.Vision
                 if (!ok)
                     throw new InvalidOperationException("BitBlt не смог захватить окно (запустите бота с правами не ниже прав игры)");
 
-                var info = Native.NativeMethods.BITMAPINFOHEADER.CreateTopDown(w, h, 32, 0);
+                var info = Native.BITMAPINFOHEADER.CreateTopDown(w, h, 32, 0);
                 int bufferSize = w * h * 4;
                 byte[] pixels = new byte[bufferSize];
                 IntPtr bitsPtr = Marshal.AllocHGlobal(bufferSize);
