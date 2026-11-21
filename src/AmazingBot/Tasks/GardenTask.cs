@@ -55,6 +55,11 @@ namespace AmazingBot.Tasks
             if (!game.OpenBedPanel(bed))
                 return false;
 
+            bool cropSampleAvailable = _ctx.Vision.TemplateExists(t.CropPresent);
+            bool cropDetected = cropSampleAvailable && Exists(t.CropPresent, thr);
+            if (cropDetected)
+                _ctx.Log.Info("Грядка «" + bed.Name + "»: растение распознано по образцу «" + t.CropPresent + "»; проверяю вредителей, удобрение и воду");
+
             bool finalAction = false;
             bool anyProgress = false;
             try
@@ -194,7 +199,14 @@ namespace AmazingBot.Tasks
             }
 
             if (!finalAction && !anyProgress)
-                _ctx.Log.Info("Грядка «" + bed.Name + "»: нечего делать (растёт)");
+            {
+                if (cropDetected)
+                    _ctx.Log.Info("Грядка «" + bed.Name + "»: растение распознано, сейчас растёт — действий не требуется");
+                else if (!cropSampleAvailable)
+                    _ctx.Log.Info("Грядка «" + bed.Name + "»: действий нет; добавьте образец «Растение есть» в мастере настройки для наглядного распознавания");
+                else
+                    _ctx.Log.Info("Грядка «" + bed.Name + "»: не найдено состояние для действия (проверьте образцы шаблонов)");
+            }
             return finalAction;
         }
 

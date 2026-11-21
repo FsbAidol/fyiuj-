@@ -73,6 +73,8 @@
 
   // ====== ШАБЛОНЫ (имена файлов в папке templates/ БЕЗ расширения .bmp) ======
   "templates": {
+    // Необязательный образец растения на засаженной грядке — создаётся во вкладке «Простая настройка».
+    "cropPresent": "crop_present",
     "emptyBed": "bed_empty",
     "cropReady": "crop_ready",
     "needsFertilizer": "needs_fertilizer",

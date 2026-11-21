@@ -89,6 +89,10 @@ namespace AmazingBot.Config
 
     public sealed class TemplatesConfig
     {
+        /// <summary>Optional visual cue proving that a planted crop is present on the bed.</summary>
+        [JsonPropertyName("cropPresent")]
+        public string CropPresent { get; set; } = "crop_present";
+
         [JsonPropertyName("emptyBed")]
         public string EmptyBed { get; set; } = "bed_empty";
 

@@ -60,6 +60,10 @@ namespace AmazingBot.App
         private Button _recordButton = null!;
         private bool _recording;
 
+        // Вкладка «Мастер настройки»
+        private ComboBox _templatePresetCombo = null!;
+        private DataGridView _parasiteGrid = null!;
+
         // Вкладка «Шаблоны»
         private ListBox _templateResults = null!;
 
@@ -97,6 +101,7 @@ namespace AmazingBot.App
 
             BuildUi();
             LoadConfigIntoControls();
+            LoadWizardMappings();
             ReloadBedsList();
             LoadRoutesList();
             SetStatus("остановлен");
@@ -110,6 +115,7 @@ namespace AmazingBot.App
         {
             _tabs = new TabControl { Dock = DockStyle.Fill };
             _tabs.TabPages.Add(BuildMainTab());
+            _tabs.TabPages.Add(BuildSetupTab());
             _tabs.TabPages.Add(BuildBedsTab());
             _tabs.TabPages.Add(BuildRoutesTab());
             _tabs.TabPages.Add(BuildTemplatesTab());
@@ -245,6 +251,231 @@ namespace AmazingBot.App
             layout.Controls.Add(logGroup, 0, 3);
             page.Controls.Add(layout);
             return page;
+        }
+
+        private TabPage BuildSetupTab()
+        {
+            var page = new TabPage("Простая настройка");
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(10) };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+
+            var intro = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Мастер без ручного редактирования JSON. Сначала добавьте координаты грядок во вкладке «Грядки». Для распознавания откройте нужное состояние в игре, выберите его ниже и обведите значок на снимке. Бот сравнивает экран с этими образцами; он не угадывает неизвестные значки сам."
+            };
+
+            var sampleGroup = new GroupBox { Text = "1. Обучить распознаванию", Dock = DockStyle.Fill, Padding = new Padding(8) };
+            var sampleFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
+            _templatePresetCombo = new ComboBox { Width = 270, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(4, 10, 8, 4) };
+            _templatePresetCombo.Items.AddRange(new object[]
+            {
+                new TemplatePreset("Растение есть / растёт", "crop_present"),
+                new TemplatePreset("Пустая грядка", "bed_empty"),
+                new TemplatePreset("Урожай готов", "crop_ready"),
+                new TemplatePreset("Нужно удобрение", "needs_fertilizer"),
+                new TemplatePreset("Мало воды", "moisture_low"),
+                new TemplatePreset("Воды достаточно", "moisture_full"),
+                new TemplatePreset("Кнопка «Собрать»", "btn_harvest"),
+                new TemplatePreset("Кнопка «Клонировать»", "btn_clone")
+            });
+            _templatePresetCombo.SelectedIndex = 0;
+            var captureSample = new Button { Text = "Снять образец с экрана…", AutoSize = true, Height = 34, Margin = new Padding(4, 8, 8, 4) };
+            captureSample.Click += (s, e) => CaptureTemplateSample();
+            var missing = new Label
+            {
+                AutoSize = false,
+                Width = 420,
+                Height = 48,
+                Text = "Для жуков добавьте запись в таблице ниже, затем выделите его и нажмите «Снять образец жука».",
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.DimGray
+            };
+            sampleFlow.Controls.Add(_templatePresetCombo);
+            sampleFlow.Controls.Add(captureSample);
+            sampleFlow.Controls.Add(missing);
+            sampleGroup.Controls.Add(sampleFlow);
+
+            var bugsGroup = new GroupBox { Text = "2. Жуки / вредители — чем лечить и какая клавиша", Dock = DockStyle.Fill, Padding = new Padding(8) };
+            var bugLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+            bugLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            bugLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            _parasiteGrid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = true,
+                AllowUserToDeleteRows = true,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                RowHeadersVisible = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false
+            };
+            _parasiteGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "displayName", HeaderText = "Название", FillWeight = 90 });
+            _parasiteGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "template", HeaderText = "Имя образца (латиница)", FillWeight = 130 });
+            _parasiteGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "chemical", HeaderText = "Химикат / ключ", FillWeight = 120 });
+            _parasiteGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "hotbarKey", HeaderText = "Слот", FillWeight = 55 });
+            _parasiteGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "Сколько есть", FillWeight = 75 });
+            var bugButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
+            var bugSample = new Button { Text = "Снять образец выбранного жука…", AutoSize = true, Height = 30 };
+            bugSample.Click += (s, e) => CaptureSelectedParasiteSample();
+            var saveMap = new Button { Text = "Сохранить таблицу", AutoSize = true, Height = 30 };
+            saveMap.Click += (s, e) => SaveWizardMappings(true);
+            bugButtons.Controls.Add(bugSample);
+            bugButtons.Controls.Add(saveMap);
+            bugLayout.Controls.Add(_parasiteGrid, 0, 0);
+            bugLayout.Controls.Add(bugButtons, 0, 1);
+            bugsGroup.Controls.Add(bugLayout);
+
+            var bottom = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
+            var bedsButton = new Button { Text = "Дальше: расставить грядки →", AutoSize = true, Height = 32 };
+            bedsButton.Click += (s, e) => _tabs.SelectedIndex = 2;
+            var validateButton = new Button { Text = "Проверить образцы", AutoSize = true, Height = 32 };
+            validateButton.Click += (s, e) => { _tabs.SelectedIndex = 4; CheckTemplates(); };
+            bottom.Controls.Add(bedsButton);
+            bottom.Controls.Add(validateButton);
+
+            layout.Controls.Add(intro, 0, 0);
+            layout.Controls.Add(sampleGroup, 0, 1);
+            layout.Controls.Add(bugsGroup, 0, 2);
+            layout.Controls.Add(bottom, 0, 3);
+            page.Controls.Add(layout);
+            return page;
+        }
+
+        private void LoadWizardMappings()
+        {
+            _parasiteGrid.Rows.Clear();
+            foreach (ParasiteMap map in _cfg.Parasites)
+            {
+                int count = _cfg.Inventory.Chemicals.TryGetValue(map.Chemical, out int found) ? found : 0;
+                _parasiteGrid.Rows.Add(map.Name, map.Parasite, map.Chemical, map.HotbarKey, count);
+            }
+        }
+
+        private void SaveWizardMappings(bool showMessage)
+        {
+            if (_parasiteGrid.IsCurrentCellInEditMode)
+                _parasiteGrid.EndEdit();
+            var maps = new List<ParasiteMap>();
+            bool invalidRow = false;
+            foreach (DataGridViewRow row in _parasiteGrid.Rows)
+            {
+                if (row.IsNewRow) continue;
+                string name = Convert.ToString(row.Cells[0].Value)?.Trim() ?? string.Empty;
+                string template = Convert.ToString(row.Cells[1].Value)?.Trim() ?? string.Empty;
+                string chemical = Convert.ToString(row.Cells[2].Value)?.Trim() ?? string.Empty;
+                string key = Convert.ToString(row.Cells[3].Value)?.Trim() ?? string.Empty;
+                if (name.Length == 0 && template.Length == 0 && chemical.Length == 0 && key.Length == 0) continue;
+                if (template.Length == 0 || chemical.Length == 0 || key.Length == 0)
+                {
+                    invalidRow = true;
+                    continue;
+                }
+                int count = 0;
+                int.TryParse(Convert.ToString(row.Cells[4].Value), out count);
+                maps.Add(new ParasiteMap
+                {
+                    Name = name.Length == 0 ? template : name,
+                    Parasite = template,
+                    Chemical = chemical,
+                    HotbarKey = key
+                });
+                _cfg.Inventory.Chemicals[chemical] = Math.Max(0, count);
+            }
+            if (invalidRow)
+            {
+                if (showMessage)
+                    MessageBox.Show("В таблице есть незаполненная строка. Заполните образец, химикат и слот хотбара либо удалите строку, затем сохраните снова.", "Настройка вредителей", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            _cfg.Parasites = maps;
+            ConfigService.Save(_configPath, _cfg, _log);
+            if (showMessage)
+                MessageBox.Show("Настройка вредителей сохранена. Снимите образец каждого значка.", "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void CaptureTemplateSample()
+        {
+            if (!(_templatePresetCombo.SelectedItem is TemplatePreset preset)) return;
+            CaptureTemplate(preset.TemplateName, preset.DisplayName);
+            ApplyTemplatePreset(preset.TemplateName);
+        }
+
+        private void CaptureSelectedParasiteSample()
+        {
+            if (_parasiteGrid.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Сначала выберите строку вредителя в таблице.", "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            DataGridViewRow row = _parasiteGrid.SelectedRows[0];
+            string template = Convert.ToString(row.Cells[1].Value)?.Trim() ?? string.Empty;
+            if (template.Length == 0)
+            {
+                MessageBox.Show("Заполните колонку «Имя образца» (например, bug_spider), затем сохраните образец.", "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            template = new string(template.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+            row.Cells[1].Value = template;
+            SaveWizardMappings(false);
+            CaptureTemplate(template, "вредитель «" + (Convert.ToString(row.Cells[0].Value) ?? template) + "»");
+        }
+
+        private void CaptureTemplate(string templateName, string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(templateName)) return;
+            var vision = CreateVision();
+            if (!vision.Refresh() || vision.Current == null)
+            {
+                MessageBox.Show("Окно игры не найдено. Запустите игру в оконном/безрамочном режиме и проверьте заголовок в настройках.", "Обучение распознавания", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            using (var selector = new CropSelectorForm(vision.Current.Image, displayName))
+            {
+                if (selector.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    BitmapImage crop = vision.Current.Image.Crop(selector.SelectedCrop.X, selector.SelectedCrop.Y, selector.SelectedCrop.Width, selector.SelectedCrop.Height);
+                    string dir = Path.GetFullPath(_cfg.TemplatesDir);
+                    Directory.CreateDirectory(dir);
+                    string path = Path.Combine(dir, templateName + ".bmp");
+                    BmpCodec.Save(path, crop);
+                    _templateResults.Items.Add("Образец сохранён: " + templateName + " (" + crop.Width + "×" + crop.Height + ")");
+                    _log.Info("Создан образец распознавания «" + displayName + "»: " + path);
+                    MessageBox.Show("Образец сохранён. Для проверки нажмите «Проверить образцы».", "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Не удалось сохранить образец: " + ex.Message, "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void ApplyTemplatePreset(string templateName)
+        {
+            switch (templateName)
+            {
+                case "crop_present": _cfg.Templates.CropPresent = templateName; break;
+                case "bed_empty": _cfg.Templates.EmptyBed = templateName; break;
+                case "crop_ready": _cfg.Templates.CropReady = templateName; break;
+                case "needs_fertilizer": _cfg.Templates.NeedsFertilizer = templateName; break;
+                case "moisture_low": _cfg.Templates.MoistureLow = templateName; break;
+                case "moisture_full": _cfg.Templates.MoistureFull = templateName; break;
+                case "btn_harvest": _cfg.Templates.HarvestButton = templateName; break;
+                case "btn_clone": _cfg.Templates.CloneButton = templateName; break;
+            }
+            ConfigService.Save(_configPath, _cfg, _log);
+        }
+
+        private sealed class TemplatePreset
+        {
+            public string DisplayName { get; }
+            public string TemplateName { get; }
+            public TemplatePreset(string displayName, string templateName) { DisplayName = displayName; TemplateName = templateName; }
+            public override string ToString() => DisplayName;
         }
 
         private TabPage BuildBedsTab()
@@ -395,7 +626,7 @@ namespace AmazingBot.App
             var info = new Label
             {
                 Dock = DockStyle.Fill,
-                Text = "Бот находит кнопки и иконки по картинке. Сохраните скриншот окна, вырежьте в Paint маленькие фрагменты (кнопка «Собрать», иконка паразита…) и положите как 32-битный BMP в папку templates/ — имена должны совпадать с config.json. Подробности: templates/README.md"
+                Text = "Для основных состояний и значков используйте вкладку «Простая настройка»: там можно выделить образец мышью прямо на снимке. Здесь доступны снимок экрана и проверка сохранённых BMP-шаблонов. Имена шаблонов и подробности: templates/README.md."
             };
 
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
@@ -553,7 +784,7 @@ namespace AmazingBot.App
                 MessageBox.Show(
                     "Сначала настройте грядки: вкладка «Грядки» → «Захват точек».",
                     "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                _tabs.SelectedIndex = 1;
+                _tabs.SelectedIndex = 2;
                 return;
             }
 
@@ -935,6 +1166,7 @@ namespace AmazingBot.App
         {
             var names = new List<string>
             {
+                _cfg.Templates.CropPresent,
                 _cfg.Templates.CropReady,
                 _cfg.Templates.EmptyBed,
                 _cfg.Templates.NeedsFertilizer,
@@ -1010,6 +1242,7 @@ namespace AmazingBot.App
             _cfg.Beds = new List<BedPoint>(_beds);
 
             _log.MinimumLevel = ParseLogLevel(_cfg.LogLevel);
+            SaveWizardMappings(false);
             ConfigService.Save(_configPath, _cfg, _log);
             SetStatus("настройки сохранены");
         }
