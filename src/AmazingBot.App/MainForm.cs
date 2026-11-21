@@ -46,12 +46,15 @@ namespace AmazingBot.App
         // Вкладка «Грядки»
         private ListView _bedsList = null!;
         private Label _captureHint = null!;
+        private Button _finishCaptureButton = null!;
         private Timer _captureTimer = null!;
         private bool _capturing;
-        private bool _f8WasDown;
+        private bool _capturePointKeyWasDown;
         private VisionService? _captureVision;
         private int _captureOriginX;
         private int _captureOriginY;
+        private int _captureWidth;
+        private int _captureHeight;
 
         // Вкладка «Маршруты»
         private ComboBox _routeNameCombo = null!;
@@ -518,7 +521,7 @@ namespace AmazingBot.App
             var info = new Label
             {
                 Dock = DockStyle.Fill,
-                Text = "Автопоиск: выделите середину одной грядки на снимке — бот найдёт похожие грядки и покажет рамки для проверки. Числовые координаты вводить не нужно. Если автопоиск не подходит, используйте ручной F8/F9."
+                Text = "Захват без скриншотов: нажмите «Начать захват», наведите курсор на центр грядки в игре и нажмите Insert. Повторите для каждой; точка сразу появится в списке и сохранится. Кнопка «Закончить» или клавиша End завершает захват. F8 игры не используется."
             };
             _captureHint = new Label
             {
@@ -546,10 +549,12 @@ namespace AmazingBot.App
             _bedsList.Columns.Add("Y (от окна)", 130);
 
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
-            var autoDetectBtn = new Button { Text = "✦ Найти грядки автоматически…", AutoSize = true, Height = 34 };
-            autoDetectBtn.Click += async (s, e) => await AutoDetectBedsAsync();
-            var captureBtn = new Button { Text = "✚ Ручной захват (F8/F9)", AutoSize = true, Height = 34 };
+            var captureBtn = new Button { Text = "● Начать захват (Insert: точка)", AutoSize = true, Height = 34 };
             captureBtn.Click += (s, e) => StartCapture();
+            _finishCaptureButton = new Button { Text = "Закончить захват", AutoSize = true, Height = 34, Enabled = false };
+            _finishCaptureButton.Click += (s, e) => StopCapture();
+            var autoDetectBtn = new Button { Text = "Автопоиск по образцу (дополнительно)…", AutoSize = true, Height = 34 };
+            autoDetectBtn.Click += async (s, e) => await AutoDetectBedsAsync();
             var renameBtn = new Button { Text = "Переименовать", AutoSize = true, Height = 34 };
             renameBtn.Click += (s, e) => RenameSelectedBed();
             var deleteBtn = new Button { Text = "Удалить выбранное", AutoSize = true, Height = 34 };
@@ -558,8 +563,9 @@ namespace AmazingBot.App
             clearBtn.Click += (s, e) => ClearBeds();
             var saveBtn = new Button { Text = "Сохранить грядки", AutoSize = true, Height = 34 };
             saveBtn.Click += (s, e) => SaveBeds();
-            buttons.Controls.Add(autoDetectBtn);
             buttons.Controls.Add(captureBtn);
+            buttons.Controls.Add(_finishCaptureButton);
+            buttons.Controls.Add(autoDetectBtn);
             buttons.Controls.Add(renameBtn);
             buttons.Controls.Add(deleteBtn);
             buttons.Controls.Add(clearBtn);
@@ -1040,6 +1046,8 @@ namespace AmazingBot.App
             _captureVision = vision;
             _captureOriginX = vision.ClientOriginX;
             _captureOriginY = vision.ClientOriginY;
+            _captureWidth = vision.ClientWidth;
+            _captureHeight = vision.ClientHeight;
 
             if (_beds.Count > 0)
             {
@@ -1052,47 +1060,59 @@ namespace AmazingBot.App
 
             _beds.Clear();
             ReloadBedsList();
+            SaveBeds();
             _capturing = true;
-            _f8WasDown = false;
-            _captureHint.Text = "ИДЁТ ЗАХВАТ: наведите мышь на грядку и нажмите F8. F9 — закончить.";
+            _capturePointKeyWasDown = false;
+            _finishCaptureButton.Enabled = true;
+            _captureHint.Text = "ЗАХВАТ АКТИВЕН: наведите курсор на центр грядки и нажмите Insert. End или «Закончить захват» — готово. Каждая точка сохраняется сразу.";
             _captureHint.Visible = true;
             _captureTimer.Start();
-            _log.Info("Захват точек грядок начался. F8 — точка, F9 — закончить.");
+            _log.Info("Захват грядок: наведение на центр + Insert добавляет точку; End или кнопка завершает. Сохранение выполняется сразу.");
         }
 
         private void OnCaptureTick(object? sender, EventArgs e)
         {
             if (!_capturing) return;
-            if (NativeMethods.KeyDown(NativeMethods.VK_F9))
+            if (NativeMethods.KeyDown(NativeMethods.VK_END))
             {
                 StopCapture();
                 return;
             }
-            bool f8 = NativeMethods.KeyDown(NativeMethods.VK_F8);
-            if (f8 && !_f8WasDown)
+            bool pointKeyDown = NativeMethods.KeyDown(NativeMethods.VK_INSERT);
+            if (pointKeyDown && !_capturePointKeyWasDown)
             {
                 Native.POINT p = ScreenCapture.GetCursorPosition();
                 int relX = p.X - _captureOriginX;
                 int relY = p.Y - _captureOriginY;
-                string name = "bed" + (_beds.Count + 1);
-                _beds.Add(new BedPoint { Name = name, X = relX, Y = relY });
-                ReloadBedsList();
-                _log.Info("Грядка " + name + ": клиент (" + relX + ", " + relY + ")");
+                if (relX < 0 || relY < 0 || relX >= _captureWidth || relY >= _captureHeight)
+                {
+                    _log.Warn("Курсор вне окна игры — точка не добавлена. Наведите его на грядку и нажмите Insert.");
+                }
+                else
+                {
+                    string name = "bed" + (_beds.Count + 1);
+                    _beds.Add(new BedPoint { Name = name, X = relX, Y = relY });
+                    ReloadBedsList();
+                    SaveBeds(); // persist each point immediately; finishing capture is not required for saving
+                    _log.Info("Точка " + name + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
+                    _captureHint.Text = "Добавлена " + name + " (" + _beds.Count + " всего). Наведитесь на следующую грядку и нажмите Insert; закончить — End или кнопкой.";
+                }
             }
-            _f8WasDown = f8;
+            _capturePointKeyWasDown = pointKeyDown;
         }
 
         private void StopCapture()
         {
             _capturing = false;
             _captureTimer.Stop();
+            _finishCaptureButton.Enabled = false;
             _captureHint.Visible = false;
             _captureHint.Text = string.Empty;
             if (_beds.Count > 0)
             {
                 SaveBeds();
                 MessageBox.Show(
-                    "Захват завершён. Сохранено грядок: " + _beds.Count + ".\nПереименуйте их на вкладке (двойной смысл — «Переименовать»), если нужно.",
+                    "Захват завершён. Сохранено грядок: " + _beds.Count + ". Каждая точка сохранялась сразу.",
                     "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else

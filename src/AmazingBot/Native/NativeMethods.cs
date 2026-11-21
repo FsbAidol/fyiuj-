@@ -36,6 +36,8 @@ namespace AmazingBot.Native
         public const uint WM_RBUTTONDOWN = 0x0204;
         public const uint WM_KEYUP = 0x0101;
 
+        public const int VK_END = 0x23;
+        public const int VK_INSERT = 0x2D;
         public const int VK_F8 = 0x77;
         public const int VK_F9 = 0x78;
         public const int VK_F10 = 0x79;

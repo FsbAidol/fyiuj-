@@ -36,7 +36,7 @@ namespace AmazingBot.Ui
                 Console.WriteLine(" 1) Запустить бота");
                 Console.WriteLine(" 2) Один проход по грядкам (проверка настройки)");
                 Console.WriteLine(" 3) Записать маршрут (к бочке / к машине)");
-                Console.WriteLine(" 4) Калибровка грядок (наведение + F8, F9 — закончить)");
+                Console.WriteLine(" 4) Выбрать грядки курсором (Insert — точка, End — закончить)");
                 Console.WriteLine(" 5) Сохранить скриншот окна игры (screenshot.bmp)");
                 Console.WriteLine(" 6) Проверить шаблоны на экране");
                 Console.WriteLine(" 7) Настройки (интервал, режим, анти-афк, авто-отключение, полив)");
@@ -149,28 +149,38 @@ namespace AmazingBot.Ui
                 return;
             }
             Console.WriteLine("Текущих грядок в конфиге: " + _cfg.Beds.Count + ". Они будут ЗАМЕНЕНЫ новым списком.");
-            Console.WriteLine("Наводите мышь на каждую грядку и нажимайте F8. F9 — закончить калибровку.");
+                Console.WriteLine("Наведите курсор на центр грядки и нажмите Insert. End — закончить. Каждая точка сохраняется сразу; F8 не используется (в игре это скриншот).");
             Console.WriteLine("Enter для старта...");
             Console.ReadLine();
 
             var beds = new List<BedPoint>();
-            bool f8WasDown = false;
+            bool pointKeyWasDown = false;
             int index = 0;
             while (true)
             {
-                if (NativeMethods.KeyDown(NativeMethods.VK_F9))
+                if (NativeMethods.KeyDown(NativeMethods.VK_END))
                     break;
-                bool f8Down = NativeMethods.KeyDown(NativeMethods.VK_F8);
-                if (f8Down && !f8WasDown)
+                bool pointKeyDown = NativeMethods.KeyDown(NativeMethods.VK_INSERT);
+                if (pointKeyDown && !pointKeyWasDown)
                 {
                     Native.POINT p = ScreenCapture.GetCursorPosition();
                     int relX = p.X - vision.ClientOriginX;
                     int relY = p.Y - vision.ClientOriginY;
-                    index++;
-                    beds.Add(new BedPoint { Name = "bed" + index, X = relX, Y = relY });
-                    _log.Info("Грядка bed" + index + ": клиент (" + relX + ", " + relY + ")");
+                    if (relX >= 0 && relY >= 0 && relX < vision.ClientWidth && relY < vision.ClientHeight)
+                    {
+                        index++;
+                        beds.Add(new BedPoint { Name = "bed" + index, X = relX, Y = relY });
+                        _cfg.Beds = new List<BedPoint>(beds);
+                        ConfigService.Save(_configPath, _cfg, _log);
+                        _log.Info("Точка bed" + index + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
+                        Console.WriteLine("Сохранена точка bed" + index + ". Всего: " + index + ". Продолжайте Insert, закончить — End.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Курсор вне окна игры — точка не сохранена.");
+                    }
                 }
-                f8WasDown = f8Down;
+                pointKeyWasDown = pointKeyDown;
                 Thread.Sleep(25);
             }
 
