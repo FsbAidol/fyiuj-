@@ -168,12 +168,25 @@ namespace AmazingBot.Ui
                     int relY = p.Y - vision.ClientOriginY;
                     if (relX >= 0 && relY >= 0 && relX < vision.ClientWidth && relY < vision.ClientHeight)
                     {
-                        index++;
-                        beds.Add(new BedPoint { Name = "bed" + index, X = relX, Y = relY });
-                        _cfg.Beds = new List<BedPoint>(beds);
-                        ConfigService.Save(_configPath, _cfg, _log);
-                        _log.Info("Точка bed" + index + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
-                        Console.WriteLine("Сохранена точка bed" + index + ". Всего: " + index + ". Продолжайте Insert, закончить — End.");
+                        BedPoint? duplicate = beds.FirstOrDefault(b =>
+                        {
+                            long dx = (long)b.X - relX;
+                            long dy = (long)b.Y - relY;
+                            return dx * dx + dy * dy < 25L * 25L;
+                        });
+                        if (duplicate != null)
+                        {
+                            Console.WriteLine("Точка слишком близко к " + duplicate.Name + " — похоже, это та же грядка, повтор пропущен.");
+                        }
+                        else
+                        {
+                            index++;
+                            beds.Add(new BedPoint { Name = "bed" + index, X = relX, Y = relY });
+                            _cfg.Beds = new List<BedPoint>(beds);
+                            ConfigService.Save(_configPath, _cfg, _log);
+                            _log.Info("Точка bed" + index + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
+                            Console.WriteLine("Сохранена точка bed" + index + ". Всего: " + index + ". Продолжайте Insert, закончить — End.");
+                        }
                     }
                     else
                     {

@@ -895,6 +895,16 @@ namespace AmazingBot.App
                 return;
             }
 
+            List<string> missingCore = MissingCoreTemplates();
+            if (missingCore.Count > 0)
+            {
+                MessageBox.Show(
+                    "Бот пока не запущен: не хватает образцов для распознавания:\n\n• " + string.Join(".bmp\n• ", missingCore) + ".bmp\n\nОткройте «Простая настройка», снимите эти состояния с экрана игры, затем запустите снова.",
+                    "Сначала настройте распознавание", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _tabs.SelectedIndex = 1;
+                return;
+            }
+
             // Гарантируем, что грядки в конфиге совпадают со списком в окне
             _cfg.Beds = new List<BedPoint>(_beds);
             ConfigService.Save(_configPath, _cfg, _log);
@@ -1090,12 +1100,26 @@ namespace AmazingBot.App
                 }
                 else
                 {
-                    string name = "bed" + (_beds.Count + 1);
-                    _beds.Add(new BedPoint { Name = name, X = relX, Y = relY });
-                    ReloadBedsList();
-                    SaveBeds(); // persist each point immediately; finishing capture is not required for saving
-                    _log.Info("Точка " + name + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
-                    _captureHint.Text = "Добавлена " + name + " (" + _beds.Count + " всего). Наведитесь на следующую грядку и нажмите Insert; закончить — End или кнопкой.";
+                    BedPoint? duplicate = _beds.FirstOrDefault(b =>
+                    {
+                        long dx = (long)b.X - relX;
+                        long dy = (long)b.Y - relY;
+                        return dx * dx + dy * dy < 25L * 25L;
+                    });
+                    if (duplicate != null)
+                    {
+                        _log.Warn("Точка слишком близко к " + duplicate.Name + " (менее 25 px) — вероятно, это та же грядка. Не добавляю повтор. Наведитесь на центр другой грядки.");
+                        _captureHint.Text = "Похоже, это уже " + duplicate.Name + " — точка не добавлена. Наведитесь на центр другой грядки.";
+                    }
+                    else
+                    {
+                        string name = "bed" + (_beds.Count + 1);
+                        _beds.Add(new BedPoint { Name = name, X = relX, Y = relY });
+                        ReloadBedsList();
+                        SaveBeds(); // persist each point immediately; finishing capture is not required for saving
+                        _log.Info("Точка " + name + " сохранена: X=" + relX + ", Y=" + relY + " относительно окна игры");
+                        _captureHint.Text = "Добавлена " + name + " (" + _beds.Count + " всего). Наведитесь на следующую грядку и нажмите Insert; закончить — End или кнопкой.";
+                    }
                 }
             }
             _capturePointKeyWasDown = pointKeyDown;
@@ -1360,6 +1384,26 @@ namespace AmazingBot.App
             }
             if (!anyMissing)
                 _templateResults.Items.Add("(все на месте)");
+        }
+
+        private List<string> MissingCoreTemplates()
+        {
+            string harvestButton = string.Equals(_cfg.HarvestMode, "clone", StringComparison.OrdinalIgnoreCase)
+                ? _cfg.Templates.CloneButton
+                : _cfg.Templates.HarvestButton;
+            string[] required =
+            {
+                _cfg.Templates.EmptyBed,
+                _cfg.Templates.CropReady,
+                _cfg.Templates.NeedsFertilizer,
+                _cfg.Templates.MoistureLow,
+                harvestButton
+            };
+            VisionService vision = CreateVision();
+            return required
+                .Where(name => !string.IsNullOrWhiteSpace(name) && !vision.TemplateExists(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private IEnumerable<string> RequiredTemplateNames()
