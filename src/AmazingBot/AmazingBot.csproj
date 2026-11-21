@@ -15,6 +15,7 @@
 
   <PropertyGroup>
     <CsWinRTEnabled>true</CsWinRTEnabled>
+    <CsWinRTWindowsMetadata>sdk</CsWinRTWindowsMetadata>
     <CsWinRTIncludes>Windows.Foundation;Windows.Globalization;Windows.Graphics.Imaging;Windows.Media.Ocr;Windows.Security.Cryptography;Windows.Storage.Streams</CsWinRTIncludes>
   </PropertyGroup>
 
