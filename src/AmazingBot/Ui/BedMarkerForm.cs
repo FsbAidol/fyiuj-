@@ -24,7 +24,7 @@ namespace AmazingBot.Ui
 
         public IReadOnlyList<Point> Points => _points;
 
-        public BedMarkerForm(BitmapImage source)
+        public BedMarkerForm(BitmapImage source, IEnumerable<Point>? initialPoints = null)
         {
             _source = source;
             _bitmap = ToBitmap(source);
@@ -93,7 +93,12 @@ namespace AmazingBot.Ui
             var undo = new Button { Text = "Убрать последнюю", Width = 145, Height = 30 };
             var clear = new Button { Text = "Очистить", Width = 100, Height = 30 };
             undo.Click += (s, e) => RemoveLast();
-            clear.Click += (s, e) => ClearPoints();
+            clear.Click += (s, e) =>
+            {
+                if (_points.Count == 0) return;
+                if (MessageBox.Show(this, "Удалить все " + _points.Count + " отмеченных точек? Это не затронет config.json, пока вы не нажмёте «Сохранить точки».", "Очистить отметки", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                    ClearPoints();
+            };
             accept.Click += (s, e) =>
             {
                 if (_points.Count == 0)
@@ -110,6 +115,10 @@ namespace AmazingBot.Ui
             Controls.Add(content);
             Controls.Add(footer);
             Controls.Add(header);
+            if (initialPoints != null)
+                foreach (Point point in initialPoints)
+                    _points.Add(point);
+            RefreshPointList();
             Shown += (s, e) =>
             {
                 int width = content.ClientSize.Width;

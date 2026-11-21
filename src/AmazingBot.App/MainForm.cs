@@ -513,7 +513,7 @@ namespace AmazingBot.App
             {
                 Dock = DockStyle.Fill,
                 Padding = new Padding(12, 8, 12, 8),
-                Text = "Нажмите «Отметить грядки на превью». Бот временно скроется, снимет только игру и откроет кадр для разметки. Щёлкните по центру каждой грядки, проверьте номера и сохраните точки. Окно бота в кадр не попадёт."
+                Text = "Нажмите «Отметить грядки на превью». Окно бота временно скроется. Старые точки сохраняются; щёлкните по центрам новых грядок и нажмите «Сохранить точки». Для полного сброса используйте «Очистить» в окне разметки."
             };
             var infoPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
             infoPanel.Controls.Add(info);
@@ -940,11 +940,7 @@ namespace AmazingBot.App
         private void SelectBedsOnPreview()
         {
             if (_botRunning || _recording) return;
-            if (_beds.Count > 0 && MessageBox.Show(
-                    "Новые метки заменят текущий список из " + _beds.Count + " грядок. Продолжить?",
-                    "Выбор грядок", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-                return;
-
+            var priorBeds = new List<BedPoint>(_beds);
             SaveAllSettings();
             CapturedFrame? frame = CaptureGameFrameWithoutBot();
             if (frame == null)
@@ -953,16 +949,28 @@ namespace AmazingBot.App
                 return;
             }
 
-            using (var picker = new BedMarkerForm(frame.Image))
+            using (var picker = new BedMarkerForm(frame.Image, priorBeds.Select(b => new Point(b.X, b.Y))))
             {
                 if (picker.ShowDialog(this) != DialogResult.OK) return;
                 if (picker.Points.Count == 0) return;
 
                 _beds.Clear();
-                for (int i = 0; i < picker.Points.Count; i++)
+                var usedNames = new HashSet<string>(priorBeds.Select(b => b.Name), StringComparer.OrdinalIgnoreCase);
+                int nextNumber = 1;
+                foreach (Point point in picker.Points)
                 {
-                    Point point = picker.Points[i];
-                    _beds.Add(new BedPoint { Name = "bed" + (i + 1), X = point.X, Y = point.Y });
+                    BedPoint? old = priorBeds.FirstOrDefault(b => b.X == point.X && b.Y == point.Y);
+                    string name;
+                    if (old != null)
+                    {
+                        name = old.Name;
+                    }
+                    else
+                    {
+                        do { name = "bed" + nextNumber++; } while (usedNames.Contains(name));
+                        usedNames.Add(name);
+                    }
+                    _beds.Add(new BedPoint { Name = name, X = point.X, Y = point.Y });
                 }
                 ReloadBedsList();
                 SaveBeds();

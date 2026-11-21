@@ -153,10 +153,11 @@ namespace AmazingBot.Ui
             Console.WriteLine("Откроется снимок текущего игрового окна.");
             Console.WriteLine("В отдельном окне щёлкните по центру каждой грядки, проверьте пронумерованные метки и нажмите «Сохранить точки».");
             if (_cfg.Beds.Count > 0)
-                Console.WriteLine("Текущий список из " + _cfg.Beds.Count + " грядок будет заменён только после подтверждения в окне.");
+                Console.WriteLine("Текущие точки уже появятся на превью. Новые клики добавляются к ним; убрать старые можно правым кликом по метке.");
 
             System.Windows.Forms.Application.EnableVisualStyles();
-            using (var picker = new BedMarkerForm(vision.Current.Image))
+            var previousBeds = new List<BedPoint>(_cfg.Beds);
+            using (var picker = new BedMarkerForm(vision.Current.Image, previousBeds.Select(b => new System.Drawing.Point(b.X, b.Y))))
             {
                 if (picker.ShowDialog() != System.Windows.Forms.DialogResult.OK || picker.Points.Count == 0)
                 {
@@ -166,10 +167,22 @@ namespace AmazingBot.Ui
                 }
 
                 var beds = new List<BedPoint>();
-                for (int i = 0; i < picker.Points.Count; i++)
+                var usedNames = new HashSet<string>(previousBeds.Select(b => b.Name), StringComparer.OrdinalIgnoreCase);
+                int nextNumber = 1;
+                foreach (System.Drawing.Point point in picker.Points)
                 {
-                    var point = picker.Points[i];
-                    beds.Add(new BedPoint { Name = "bed" + (i + 1), X = point.X, Y = point.Y });
+                    BedPoint? old = previousBeds.FirstOrDefault(b => b.X == point.X && b.Y == point.Y);
+                    string name;
+                    if (old != null)
+                    {
+                        name = old.Name;
+                    }
+                    else
+                    {
+                        do { name = "bed" + nextNumber++; } while (usedNames.Contains(name));
+                        usedNames.Add(name);
+                    }
+                    beds.Add(new BedPoint { Name = name, X = point.X, Y = point.Y });
                 }
                 _cfg.Beds = beds;
                 ConfigService.Save(_configPath, _cfg, _log);
