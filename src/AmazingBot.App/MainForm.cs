@@ -100,6 +100,7 @@ namespace AmazingBot.App
             StartPosition = FormStartPosition.CenterScreen;
 
             BuildUi();
+            ApplyTheme();
             LoadConfigIntoControls();
             LoadWizardMappings();
             ReloadBedsList();
@@ -121,21 +122,43 @@ namespace AmazingBot.App
             _tabs.TabPages.Add(BuildTemplatesTab());
             _tabs.TabPages.Add(BuildSettingsTab());
 
-            Panel statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 26, Padding = new Padding(8, 4, 8, 4) };
-            _statusLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Text = "Статус: остановлен" };
+            Panel statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 32, Padding = new Padding(12, 5, 12, 5), BackColor = Color.White };
+            _statusLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Text = "●  остановлен", ForeColor = Color.FromArgb(74, 88, 108) };
             Label panicHint = new Label
             {
                 Dock = DockStyle.Right,
-                Width = 260,
+                Width = 250,
                 TextAlign = ContentAlignment.MiddleRight,
-                Text = "F12 — экстренная остановка",
+                Text = "F12  ·  экстренная остановка",
                 ForeColor = Color.Firebrick
             };
             statusPanel.Controls.Add(_statusLabel);
             statusPanel.Controls.Add(panicHint);
 
+            var header = new Panel { Dock = DockStyle.Top, Height = 58, BackColor = Color.FromArgb(30, 45, 72), Padding = new Padding(16, 7, 16, 7) };
+            var brand = new Label
+            {
+                Dock = DockStyle.Left,
+                Width = 310,
+                Text = "AMAZINGBOT   ·   САД",
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI Semibold", 15f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            var subtitle = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Визуальное управление грядками",
+                ForeColor = Color.FromArgb(190, 205, 225),
+                Font = new Font("Segoe UI", 9.5f),
+                TextAlign = ContentAlignment.MiddleRight
+            };
+            header.Controls.Add(subtitle);
+            header.Controls.Add(brand);
+
             Controls.Add(_tabs);
             Controls.Add(statusPanel);
+            Controls.Add(header);
         }
 
         private TabPage BuildMainTab()
@@ -495,7 +518,7 @@ namespace AmazingBot.App
             var info = new Label
             {
                 Dock = DockStyle.Fill,
-                Text = "Как обучить бота грядкам: нажмите «Захват точек», наводите мышь на каждую грядку в игре и жмите F8. F9 — закончить захват. Точки сохранятся в config.json (координаты относительно окна игры)."
+                Text = "Автопоиск: выделите середину одной грядки на снимке — бот найдёт похожие грядки и покажет рамки для проверки. Числовые координаты вводить не нужно. Если автопоиск не подходит, используйте ручной F8/F9."
             };
             _captureHint = new Label
             {
@@ -522,8 +545,10 @@ namespace AmazingBot.App
             _bedsList.Columns.Add("X (от окна)", 130);
             _bedsList.Columns.Add("Y (от окна)", 130);
 
-            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
-            var captureBtn = new Button { Text = "✚ Захват точек (наведи мышь + F8)", AutoSize = true, Height = 34 };
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+            var autoDetectBtn = new Button { Text = "✦ Найти грядки автоматически…", AutoSize = true, Height = 34 };
+            autoDetectBtn.Click += async (s, e) => await AutoDetectBedsAsync();
+            var captureBtn = new Button { Text = "✚ Ручной захват (F8/F9)", AutoSize = true, Height = 34 };
             captureBtn.Click += (s, e) => StartCapture();
             var renameBtn = new Button { Text = "Переименовать", AutoSize = true, Height = 34 };
             renameBtn.Click += (s, e) => RenameSelectedBed();
@@ -533,6 +558,7 @@ namespace AmazingBot.App
             clearBtn.Click += (s, e) => ClearBeds();
             var saveBtn = new Button { Text = "Сохранить грядки", AutoSize = true, Height = 34 };
             saveBtn.Click += (s, e) => SaveBeds();
+            buttons.Controls.Add(autoDetectBtn);
             buttons.Controls.Add(captureBtn);
             buttons.Controls.Add(renameBtn);
             buttons.Controls.Add(deleteBtn);
@@ -697,6 +723,81 @@ namespace AmazingBot.App
             return page;
         }
 
+        private void ApplyTheme()
+        {
+            BackColor = Color.FromArgb(242, 245, 250);
+            ForeColor = Color.FromArgb(39, 50, 67);
+            Font = new Font("Segoe UI", 9.5f);
+            _tabs.Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold);
+            _tabs.Padding = new Point(12, 5);
+            foreach (TabPage tab in _tabs.TabPages)
+            {
+                tab.BackColor = Color.FromArgb(242, 245, 250);
+                tab.Padding = new Padding(3);
+                StyleControls(tab);
+            }
+            _statusLabel.Parent.BackColor = Color.White;
+        }
+
+        private static void StyleControls(Control parent)
+        {
+            foreach (Control control in parent.Controls)
+            {
+                if (control is GroupBox group)
+                {
+                    group.ForeColor = Color.FromArgb(42, 59, 86);
+                    group.Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Bold);
+                }
+                else if (control is Button button)
+                {
+                    button.FlatStyle = FlatStyle.Flat;
+                    button.UseVisualStyleBackColor = false;
+                    button.FlatAppearance.BorderColor = Color.FromArgb(205, 214, 227);
+                    button.FlatAppearance.MouseOverBackColor = Color.FromArgb(229, 237, 248);
+                    button.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold);
+                    if (button.Text.Contains("ЗАПУСТИТЬ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        button.BackColor = Color.FromArgb(28, 132, 91);
+                        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(23, 113, 78);
+                        button.ForeColor = Color.White;
+                    }
+                    else if (button.Text.Contains("СТОП", StringComparison.OrdinalIgnoreCase))
+                    {
+                        button.BackColor = Color.FromArgb(184, 62, 68);
+                        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(158, 48, 55);
+                        button.ForeColor = Color.White;
+                    }
+                    else
+                    {
+                        button.UseVisualStyleBackColor = false;
+                        button.BackColor = Color.White;
+                        button.ForeColor = Color.FromArgb(42, 59, 86);
+                    }
+                }
+                else if (control is DataGridView grid)
+                {
+                    grid.BackgroundColor = Color.White;
+                    grid.BorderStyle = BorderStyle.FixedSingle;
+                    grid.GridColor = Color.FromArgb(226, 231, 239);
+                    grid.EnableHeadersVisualStyles = false;
+                    grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(232, 238, 247);
+                    grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(42, 59, 86);
+                    grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(215, 229, 247);
+                    grid.DefaultCellStyle.SelectionForeColor = Color.FromArgb(32, 45, 63);
+                }
+                else if (control is TextBox || control is ComboBox || control is NumericUpDown)
+                {
+                    control.BackColor = Color.White;
+                    control.ForeColor = Color.FromArgb(39, 50, 67);
+                }
+                else if (control is Label label && label.ForeColor == SystemColors.ControlText)
+                {
+                    label.ForeColor = Color.FromArgb(59, 72, 92);
+                }
+                if (control.HasChildren) StyleControls(control);
+            }
+        }
+
         private static void AddRow(TableLayoutPanel layout, ref int row, string label, Control control)
         {
             layout.Controls.Add(new Label { Text = label, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, row);
@@ -845,6 +946,85 @@ namespace AmazingBot.App
         }
 
         // ==================== Грядки ====================
+
+        private async Task AutoDetectBedsAsync()
+        {
+            if (_botRunning || _recording || _capturing) return;
+            if (_beds.Count > 0 && MessageBox.Show(
+                    "Автопоиск заменит текущий список из " + _beds.Count + " грядок. Продолжить?",
+                    "Автопоиск грядок", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            SaveAllSettings();
+            var vision = CreateVision();
+            if (!vision.Refresh() || vision.Current == null)
+            {
+                MessageBox.Show("Не найдено окно игры. Запустите игру в оконном режиме и проверьте заголовок в настройках.", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            BitmapImage frame = vision.Current.Image;
+            using (var selector = new CropSelectorForm(frame, "образец одной грядки"))
+            {
+                if (selector.ShowDialog(this) != DialogResult.OK) return;
+                Rectangle area = selector.SelectedCrop;
+                if (area.Width < 12 || area.Height < 12)
+                {
+                    MessageBox.Show("Выделение слишком маленькое. Обведите центральную область грядки (не фон и не панель интерфейса).", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                // Keep the example compact so matching stays responsive on full-HD screenshots.
+                int sampleWidth = Math.Min(area.Width, 80);
+                int sampleHeight = Math.Min(area.Height, 80);
+                int sampleX = area.X + (area.Width - sampleWidth) / 2;
+                int sampleY = area.Y + (area.Height - sampleHeight) / 2;
+                BitmapImage bedSample = frame.Crop(sampleX, sampleY, sampleWidth, sampleHeight);
+                List<Match> matches;
+                UseWaitCursor = true;
+                try
+                {
+                    double threshold = Math.Max(0.84, _cfg.MatchThreshold);
+                    matches = await Task.Run(() => TemplateMatcher.FindAll(frame, bedSample, threshold, 100));
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Автопоиск не завершился: " + ex.Message, "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                finally
+                {
+                    UseWaitCursor = false;
+                }
+
+                if (matches.Count == 0)
+                {
+                    MessageBox.Show("Похожих грядок не найдено. Повторите поиск и обведите меньшую, более уникальную область внутри грядки.", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                using (var review = new MatchReviewForm(frame, matches))
+                {
+                    if (review.ShowDialog(this) != DialogResult.OK) return;
+                }
+
+                _beds.Clear();
+                int index = 1;
+                foreach (Match match in matches.OrderBy(m => m.Y).ThenBy(m => m.X))
+                {
+                    _beds.Add(new BedPoint
+                    {
+                        Name = "bed" + index++,
+                        X = match.X + match.Width / 2,
+                        Y = match.Y + match.Height / 2
+                    });
+                }
+                ReloadBedsList();
+                SaveBeds();
+                _log.Info("Автопоиск завершён: распознано и сохранено грядок — " + _beds.Count);
+                MessageBox.Show("Готово: найдено и сохранено грядок — " + _beds.Count + ". Проверьте список и положение рамок на превью перед запуском бота.", "Автопоиск грядок", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
 
         private void StartCapture()
         {

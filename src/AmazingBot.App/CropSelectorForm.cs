@@ -137,7 +137,7 @@ namespace AmazingBot.App
             using (var brush = new SolidBrush(Color.FromArgb(35, Color.Lime))) e.Graphics.FillRectangle(brush, rect);
         }
 
-        private static Bitmap ToBitmap(BitmapImage image)
+        internal static Bitmap ToBitmap(BitmapImage image)
         {
             var bitmap = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppArgb);
             var data = bitmap.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
