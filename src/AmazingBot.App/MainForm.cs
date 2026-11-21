@@ -736,7 +736,7 @@ namespace AmazingBot.App
                 tab.Padding = new Padding(3);
                 StyleControls(tab);
             }
-            _statusLabel.Parent.BackColor = Color.White;
+            _statusLabel.Parent!.BackColor = Color.White;
         }
 
         private static void StyleControls(Control parent)
