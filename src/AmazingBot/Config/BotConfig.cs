@@ -241,10 +241,28 @@ namespace AmazingBot.Config
         public Dictionary<string, int> Chemicals { get; set; } = new Dictionary<string, int>();
     }
 
+    public sealed class ProfessionConfig
+    {
+        /// <summary>mining | fishing_rod | fishing_net.</summary>
+        [JsonPropertyName("mode")]
+        public string Mode { get; set; } = "mining";
+
+        /// <summary>Name of a recorded full work cycle in routes/.</summary>
+        [JsonPropertyName("route")]
+        public string Route { get; set; } = "mine_cycle";
+
+        /// <summary>Pause between repeated route cycles.</summary>
+        [JsonPropertyName("cycleDelayMs")]
+        public int CycleDelayMs { get; set; } = 1000;
+    }
+
     public sealed class BotConfig
     {
         [JsonPropertyName("windowTitleContains")]
         public string WindowTitleContains { get; set; } = "Amazing Online";
+
+        [JsonPropertyName("profession")]
+        public ProfessionConfig Profession { get; set; } = new ProfessionConfig();
 
         [JsonPropertyName("templatesDir")]
         public string TemplatesDir { get; set; } = "templates";

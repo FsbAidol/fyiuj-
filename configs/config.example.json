@@ -1,157 +1,21 @@
 {
-  // ====== ОКНО ИГРЫ ======
-  // Любой уникальный кусок заголовка окна Amazing Online (регистр не важен).
-  // Игра должна быть запущена в ОКОННОМ или безрамочном режиме, не в эксклюзивном полноэкранном.
+  // Игра должна быть в оконном или безрамочном режиме.
   "windowTitleContains": "Amazing Online",
-
-  // ====== КАТАЛОГИ ======
-  "templatesDir": "templates",
   "routesDir": "routes",
   "logsDir": "logs",
 
-  // ====== ОСНОВНОЕ ======
-  // Интервал между проверками грядок, секунд (настраивается также в меню)
-  "checkIntervalSeconds": 20,
-  // Автоматически отключить бота, когда ВСЕ грядки собраны/клонированы за один проход
-  "autoDisableOnAllBedsDone": true,
-  // "harvest" — собирать урожай, "clone" — клонировать
-  "harvestMode": "harvest",
-  // Порог совпадения шаблонов 0.5..1.0 (меньше — терпимее к условиям эфира)
-  "matchThreshold": 0.82,
-  // Страховка от зацикливания на одной грядке
-  "maxActionsPerBed": 12,
-  "stallLimitSeconds": 900,
-  // F12 — экстренная остановка (менять не нужно)
-  "panicKeyNote": "F12 — экстренная остановка",
-
-  // ====== ГРЯДКИ ======
-  // Заполняется через меню «Калибровка грядок» (F8 над грядкой, F9 — закончить).
-  // Координаты относительно клиентской области окна игры.
-  "beds": [],
-
-  // ====== ТАЙМИНГИ, мс ======
-  "timing": {
-    "actionDelayMs": 120,
-    "menuOpenWaitMs": 400,
-    "afterActionMs": 150,
-    "interStepDelayMs": 40
+  // Только профессии: mining | fishing_rod | fishing_net.
+  "profession": {
+    "mode": "mining",
+    "route": "mine_cycle",
+    "cycleDelayMs": 1000
   },
 
-  // ====== ПОЛИВ ЛЕЙКОЙ ======
-  "watering": {
-    // Сколько литров вмещает лейка
-    "canCapacityLiters": 10,
-    // Сколько литров выливается за одно нажатие по грядке
-    "litersPerClick": 1,
-    // Сколько литров нужно одной грядке (бот ведёт точный счёт)
-    "litersPerBed": 3,
-    // Сколько воды даёт одна фляга
-    "flaskLiters": 5,
-    // Сначала пополнять лейку флягами из инвентаря
-    "useFlaskFromInventory": true,
-    // Горячие клавиши слотов хотбара (настройте под себя)
-    "canHotbarKey": "3",
-    "flaskHotbarKey": "2",
-    // Маршрут к ОСНОВНОЙ бочке (запись: меню → «Записать маршрут», имя barrel_main).
-    // Записывайте полный круг: от грядок к бочке, наполнение и ВОЗВРАТ к грядкам.
-    "mainBarrelRoute": "barrel_main",
-    // Маршрут к РЕЗЕРВНОЙ бочке, когда в основной закончилась вода ("" — без резерва)
-    "backupBarrelRoute": "barrel_backup",
-    // Клавиша «набрать воду» при взаимодействии с бочкой
-    "barrelRefillKey": "E",
-    // Необязательные шаблоны «бочка пуста» — если заданы, бот поймёт, что вода кончилась,
-    // и переключится на резервную бочку
-    "mainBarrelEmptyTemplate": "",
-    "backupBarrelEmptyTemplate": "",
-    "barrelEmptyWaitMs": 700,
-    // Шаблон целой лейки и сломанной (сломанная меняется на целую из багажника)
-    "canTemplate": "can",
-    "brokenCanTemplate": "can_broken",
-    // Считать лейку полной при старте бота
-    "startWithFullCan": true
-  },
-
-  // ====== ШАБЛОНЫ (имена файлов в папке templates/ БЕЗ расширения .bmp) ======
-  "templates": {
-    // Необязательный образец растения на засаженной грядке — создаётся во вкладке «Простая настройка».
-    "cropPresent": "crop_present",
-    "emptyBed": "bed_empty",
-    "cropReady": "crop_ready",
-    "needsFertilizer": "needs_fertilizer",
-    "moistureLow": "moisture_low",
-    "moistureFull": "moisture_full",
-    // Кнопки в панели грядки
-    "harvestButton": "btn_harvest",
-    "cloneButton": "btn_clone",
-    // Крестик закрытия панели; если пусто — закрытие по Escape
-    "closePanel": ""
-  },
-
-  // ====== ПАРАЗИТЫ И ХИМИКАТЫ ======
-  // Для каждого паразита — свой химикат. chemical — одновременно имя шаблона химиката
-  // и ключ в inventory.chemicals / trunk.items[].name.
-  "parasites": [
-    { "name": "пример-паразит", "parasite": "parasite_example", "chemical": "chem_example", "hotbarKey": "4" }
-  ],
-
-  // ====== ПОСАДКА ======
-  "planting": {
-    "plantWhenEmpty": true,
-    "seedHotbarKey": "1"
-  },
-  // Горячая клавиша удобрения
-  "fertilizerHotbarKey": "5",
-
-  // ====== АНТИ-АФК ======
   "antiAfk": {
     "enabled": true,
     "intervalSeconds": 60,
-    // Клавиши, которыми сбрасывается таймер бездействия (нажимаются по очереди)
     "keys": [ "Space" ],
     "mouseWiggle": true
   },
-
-  // ====== БАГАЖНИК МАШИНЫ ======
-  // Когда что-то закончилось — бот едет к машине, открывает багажник
-  // (по маршруту trunk.route, записывается полный круг «к машине и обратно»)
-  // и забирает предмет. name: flask | fertilizer | seed | <ключ химиката>
-  "trunk": {
-    "route": "to_car",
-    "openKey": "T",
-    "closeKey": "Escape",
-    "openWaitMs": 700,
-    "items": [
-      { "template": "flask", "name": "flask", "takeCount": 3 },
-      { "template": "fertilizer", "name": "fertilizer", "takeCount": 2 },
-      { "template": "seed_example", "name": "seed", "takeCount": 10 },
-      { "template": "chem_example", "name": "chem_example", "takeCount": 2 }
-    ]
-  },
-
-  // ====== МАШИНА / РЕСПАВН ТРАНСПОРТА ======
-  // Когда на экране появляется уведомление о респавне транспорта,
-  // бот идёт по маршруту claimRoute и занимает машину клавишей claimKey,
-  // чтобы она не пропала. Поставьте "" в respawnNoticeTemplate, чтобы выключить.
-  "car": {
-    "respawnNoticeTemplate": "transport_respawn",
-    "claimRoute": "to_car",
-    "claimKey": "F",
-    "checkIntervalSeconds": 10,
-    "claimDelayMs": 500
-  },
-
-  // ====== СТАРТОВЫЙ ИНВЕНТАРЬ ======
-  // Бот ведёт внутренний счёт (шаблоны не умеют показывать количество):
-  // задайте, сколько предметов было в инвентаре на момент запуска.
-  // Когда счётчик дойдёт до нуля — бот сходит в багажник.
-  "inventory": {
-    "flasks": 3,
-    "fertilizer": 5,
-    "seeds": 10,
-    "chemicals": {
-      "chem_example": 2
-    }
-  },
-
   "logLevel": "Info"
 }

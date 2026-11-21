@@ -39,6 +39,7 @@ namespace AmazingBot.Native
         public const int VK_F8 = 0x77;
         public const int VK_F9 = 0x78;
         public const int VK_F10 = 0x79;
+        public const int VK_F11 = 0x7A;
         public const int VK_F12 = 0x7B;
         public const int VK_SPACE = 0x20;
         public const int VK_ESCAPE = 0x1B;

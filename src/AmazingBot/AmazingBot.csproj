@@ -10,7 +10,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <Optimize>true</Optimize>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-    <Description>Бот для Amazing Online (Windows-клиент): грядки, полив, бочки, багажник машины, анти-афк</Description>
+    <Description>Бот для Amazing Online: записываемые циклы шахты и рыбалки, анти-афк</Description>
   </PropertyGroup>
 
 </Project>

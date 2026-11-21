@@ -35,9 +35,6 @@ namespace AmazingBot
             string? configArg = null;
             string? recordRoute = null;
             bool once = false;
-            bool screenshot = false;
-            bool checkTemplates = false;
-            bool calibrate = false;
             bool help = false;
 
             for (int i = 0; i < args.Length; i++)
@@ -51,18 +48,9 @@ namespace AmazingBot
                     case "--once":
                         once = true;
                         break;
-                    case "--screenshot":
-                        screenshot = true;
-                        break;
-                    case "--check-templates":
-                        checkTemplates = true;
-                        break;
                     case "--record-route":
                         if (i + 1 < args.Length) recordRoute = args[++i];
                         else help = true;
-                        break;
-                    case "--calibrate-beds":
-                        calibrate = true;
                         break;
                     case "--help":
                     case "-h":
@@ -90,21 +78,6 @@ namespace AmazingBot
 
             var menu = new ConsoleMenu(cfg, configPath, log);
 
-            if (screenshot)
-            {
-                menu.SaveScreenshot();
-                return 0;
-            }
-            if (checkTemplates)
-            {
-                menu.CheckTemplates();
-                return 0;
-            }
-            if (calibrate)
-            {
-                menu.CalibrateBeds();
-                return 0;
-            }
             if (recordRoute != null)
             {
                 menu.RecordRoute(recordRoute);
@@ -133,15 +106,12 @@ namespace AmazingBot
 
         private static void PrintUsage()
         {
-            Console.WriteLine("AmazingBot — бот для Amazing Online (грядки)");
+            Console.WriteLine("AmazingBot — циклы профессий Amazing Online");
             Console.WriteLine();
             Console.WriteLine("Использование:");
             Console.WriteLine("  AmazingBot                      — интерактивное меню");
-            Console.WriteLine("  AmazingBot --once               — один проход по грядкам и выход");
-            Console.WriteLine("  AmazingBot --screenshot         — сохранить скриншот окна игры в screenshot.bmp");
-            Console.WriteLine("  AmazingBot --check-templates    — показать, какие шаблоны видны на экране");
-            Console.WriteLine("  AmazingBot --record-route NAME  — записать маршрут (F10 — конец записи)");
-            Console.WriteLine("  AmazingBot --calibrate-beds     — отметить грядки кликами на превью окна игры");
+            Console.WriteLine("  AmazingBot --once               — выполнить один цикл профессии");
+            Console.WriteLine("  AmazingBot --record-route NAME  — записать цикл (F10 — конец записи)");
             Console.WriteLine("  AmazingBot --config PATH        — использовать указанный config.json");
             Console.WriteLine();
             Console.WriteLine("F12 — экстренная остановка бота в любой момент.");
