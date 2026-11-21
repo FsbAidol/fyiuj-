@@ -1,0 +1,1071 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using AmazingBot.Config;
+using AmazingBot.Core;
+using AmazingBot.Input;
+using AmazingBot.Native;
+using AmazingBot.Vision;
+
+namespace AmazingBot.App
+{
+    /// <summary>
+    /// Графическое меню AmazingBot. Вкладки: Главная, Грядки, Маршруты, Шаблоны, Настройки.
+    /// </summary>
+    public sealed class MainForm : Form
+    {
+        private const int WizLogMaxLines = 600;
+
+        private readonly string _configPath;
+        private BotConfig _cfg;
+        private readonly Logger _log;
+        private Bot? _bot;
+        private bool _botRunning;
+
+        private readonly List<BedPoint> _beds = new List<BedPoint>();
+
+        // Общие элементы
+        private TabControl _tabs = null!;
+        private Label _statusLabel = null!;
+
+        // Вкладка «Главная»
+        private RichTextBox _logBox = null!;
+        private Button _startButton = null!;
+        private Button _stopButton = null!;
+        private ComboBox _harvestModeCombo = null!;
+        private NumericUpDown _intervalBox = null!;
+        private CheckBox _autoDisableCheck = null!;
+        private CheckBox _antiAfkCheck = null!;
+
+        // Вкладка «Грядки»
+        private ListView _bedsList = null!;
+        private Label _captureHint = null!;
+        private Timer _captureTimer = null!;
+        private bool _capturing;
+        private bool _f8WasDown;
+        private VisionService? _captureVision;
+        private int _captureOriginX;
+        private int _captureOriginY;
+
+        // Вкладка «Маршруты»
+        private ComboBox _routeNameCombo = null!;
+        private ListBox _routesList = null!;
+        private Label _recordingHint = null!;
+        private Button _recordButton = null!;
+        private bool _recording;
+
+        // Вкладка «Шаблоны»
+        private ListBox _templateResults = null!;
+
+        // Вкладка «Настройки»
+        private TextBox _windowTitleBox = null!;
+        private NumericUpDown _thresholdBox = null!;
+        private NumericUpDown _canCapacityBox = null!;
+        private NumericUpDown _litersPerClickBox = null!;
+        private NumericUpDown _litersPerBedBox = null!;
+        private NumericUpDown _flaskLitersBox = null!;
+        private TextBox _canKeyBox = null!;
+        private TextBox _flaskKeyBox = null!;
+        private TextBox _seedKeyBox = null!;
+        private TextBox _fertilizerKeyBox = null!;
+        private NumericUpDown _afkIntervalBox = null!;
+        private TextBox _afkKeysBox = null!;
+        private ComboBox _logLevelCombo = null!;
+
+        public MainForm()
+        {
+            _configPath = ConfigService.FindConfigPath(null);
+            _cfg = ConfigService.Load(_configPath, null, out List<string> problems);
+            _log = new Logger(_cfg.LogsDir) { MinimumLevel = ParseLogLevel(_cfg.LogLevel) };
+            _log.LineWritten += OnLogLine;
+            foreach (string problem in problems)
+                _log.Warn("Конфиг: " + problem);
+            _log.Info("AmazingBot запущен. Конфиг: " + Path.GetFullPath(_configPath));
+
+            _beds.AddRange(_cfg.Beds);
+
+            Text = "AmazingBot — Амазинг Онлайн";
+            Size = new Size(1024, 680);
+            MinimumSize = new Size(900, 600);
+            StartPosition = FormStartPosition.CenterScreen;
+
+            BuildUi();
+            LoadConfigIntoControls();
+            ReloadBedsList();
+            LoadRoutesList();
+            SetStatus("остановлен");
+
+            FormClosing += OnFormClosing;
+        }
+
+        // ==================== Построение интерфейса ====================
+
+        private void BuildUi()
+        {
+            _tabs = new TabControl { Dock = DockStyle.Fill };
+            _tabs.TabPages.Add(BuildMainTab());
+            _tabs.TabPages.Add(BuildBedsTab());
+            _tabs.TabPages.Add(BuildRoutesTab());
+            _tabs.TabPages.Add(BuildTemplatesTab());
+            _tabs.TabPages.Add(BuildSettingsTab());
+
+            Panel statusPanel = new Panel { Dock = DockStyle.Bottom, Height = 26, Padding = new Padding(8, 4, 8, 4) };
+            _statusLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Text = "Статус: остановлен" };
+            Label panicHint = new Label
+            {
+                Dock = DockStyle.Right,
+                Width = 260,
+                TextAlign = ContentAlignment.MiddleRight,
+                Text = "F12 — экстренная остановка",
+                ForeColor = Color.Firebrick
+            };
+            statusPanel.Controls.Add(_statusLabel);
+            statusPanel.Controls.Add(panicHint);
+
+            Controls.Add(_tabs);
+            Controls.Add(statusPanel);
+        }
+
+        private TabPage BuildMainTab()
+        {
+            var page = new TabPage("Главная");
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                Padding = new Padding(10)
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 120));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 128));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            // --- Блок запуска
+            var runGroup = new GroupBox { Text = "Запуск", Dock = DockStyle.Fill, Padding = new Padding(10) };
+            var runFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
+            _startButton = new Button
+            {
+                Text = "▶  ЗАПУСТИТЬ БОТА",
+                Width = 280,
+                Height = 64,
+                Font = new Font(Font.FontFamily, 14f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.ForestGreen,
+                FlatStyle = FlatStyle.Flat,
+                Margin = new Padding(4, 12, 12, 4)
+            };
+            _startButton.Click += async (s, e) => await StartBotAsync();
+            _stopButton = new Button
+            {
+                Text = "■  СТОП",
+                Width = 180,
+                Height = 64,
+                Font = new Font(Font.FontFamily, 14f, FontStyle.Bold),
+                ForeColor = Color.White,
+                BackColor = Color.Firebrick,
+                FlatStyle = FlatStyle.Flat,
+                Enabled = false,
+                Margin = new Padding(4, 12, 4, 4)
+            };
+            _stopButton.Click += (s, e) => StopBot();
+            runFlow.Controls.Add(_startButton);
+            runFlow.Controls.Add(_stopButton);
+            runGroup.Controls.Add(runFlow);
+
+            // --- Что делает бот
+            var descGroup = new GroupBox { Text = "Что делает бот на каждой грядке", Dock = DockStyle.Fill, Padding = new Padding(8) };
+            var desc = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Открывает грядку → если готова: Собрать/Клонировать → если паразит: нужный химикат → если просит удобрение: удобряет → если низкая влажность: поливает ровно до нормы литром → если пусто: сажает семя.\nЗакончилось что-то (фляги, химикаты, удобрение, семена, сломанная лейка) — едет к машине и берёт из багажника. Респавн транспорта — занимает машину сам."
+            };
+            descGroup.Controls.Add(desc);
+
+            // --- Быстрые настройки
+            var quickGroup = new GroupBox { Text = "Быстрые настройки", Dock = DockStyle.Fill, Padding = new Padding(10) };
+            var quickFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true };
+
+            var harvestPanel = new Panel { Width = 250, Height = 84 };
+            harvestPanel.Controls.Add(new Label { Text = "Когда грядка готова:", Top = 0, Left = 0, AutoSize = true });
+            _harvestModeCombo = new ComboBox { Top = 22, Left = 0, Width = 220, DropDownStyle = ComboBoxStyle.DropDownList };
+            _harvestModeCombo.Items.Add("Собирать урожай");
+            _harvestModeCombo.Items.Add("Клонировать");
+            _harvestModeCombo.SelectedIndex = 0;
+            harvestPanel.Controls.Add(_harvestModeCombo);
+
+            var intervalPanel = new Panel { Width = 210, Height = 84 };
+            intervalPanel.Controls.Add(new Label { Text = "Проверять грядки раз в (сек):", Top = 0, Left = 0, AutoSize = true });
+            _intervalBox = new NumericUpDown { Top = 22, Left = 0, Width = 90, Minimum = 1, Maximum = 3600, Value = 20 };
+            intervalPanel.Controls.Add(_intervalBox);
+
+            var checksPanel = new Panel { Width = 330, Height = 84 };
+            _autoDisableCheck = new CheckBox { Text = "Отключать бота, когда собраны ВСЕ грядки", Top = 4, Left = 0, Width = 330, Checked = true };
+            _antiAfkCheck = new CheckBox { Text = "Анти-афк (не кикает за бездействие)", Top = 32, Left = 0, Width = 330, Checked = true };
+            checksPanel.Controls.Add(_autoDisableCheck);
+            checksPanel.Controls.Add(_antiAfkCheck);
+
+            var saveQuick = new Button { Text = "Сохранить", Width = 120, Height = 34, Top = 18, Left = 0, Margin = new Padding(0, 22, 0, 0) };
+            saveQuick.Click += (s, e) => SaveAllSettings();
+            var saveQuickPanel = new Panel { Width = 130, Height = 84 };
+            saveQuick.Top = 22;
+            saveQuickPanel.Controls.Add(saveQuick);
+
+            quickFlow.Controls.Add(harvestPanel);
+            quickFlow.Controls.Add(intervalPanel);
+            quickFlow.Controls.Add(checksPanel);
+            quickFlow.Controls.Add(saveQuickPanel);
+            quickGroup.Controls.Add(quickFlow);
+
+            // --- Журнал
+            var logGroup = new GroupBox { Text = "Журнал работы", Dock = DockStyle.Fill, Padding = new Padding(8) };
+            _logBox = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                BackColor = Color.FromArgb(24, 24, 24),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Consolas", 9.5f),
+                BorderStyle = BorderStyle.None
+            };
+            var clearLog = new Button { Text = "Очистить журнал", Dock = DockStyle.Bottom, Height = 26 };
+            clearLog.Click += (s, e) => _logBox.Clear();
+            logGroup.Controls.Add(_logBox);
+            logGroup.Controls.Add(clearLog);
+
+            layout.Controls.Add(runGroup, 0, 0);
+            layout.Controls.Add(descGroup, 0, 1);
+            layout.Controls.Add(quickGroup, 0, 2);
+            layout.Controls.Add(logGroup, 0, 3);
+            page.Controls.Add(layout);
+            return page;
+        }
+
+        private TabPage BuildBedsTab()
+        {
+            var page = new TabPage("Грядки");
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(10)
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+
+            var info = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Как обучить бота грядкам: нажмите «Захват точек», наводите мышь на каждую грядку в игре и жмите F8. F9 — закончить захват. Точки сохранятся в config.json (координаты относительно окна игры)."
+            };
+            _captureHint = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "",
+                ForeColor = Color.Firebrick,
+                Font = new Font(Font, FontStyle.Bold),
+                Visible = false
+            };
+            var infoPanel = new Panel { Dock = DockStyle.Fill };
+            infoPanel.Controls.Add(_captureHint);
+            infoPanel.Controls.Add(info);
+            _captureHint.BringToFront();
+
+            _bedsList = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                MultiSelect = false
+            };
+            _bedsList.Columns.Add("Имя", 140);
+            _bedsList.Columns.Add("X (от окна)", 130);
+            _bedsList.Columns.Add("Y (от окна)", 130);
+
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
+            var captureBtn = new Button { Text = "✚ Захват точек (наведи мышь + F8)", AutoSize = true, Height = 34 };
+            captureBtn.Click += (s, e) => StartCapture();
+            var renameBtn = new Button { Text = "Переименовать", AutoSize = true, Height = 34 };
+            renameBtn.Click += (s, e) => RenameSelectedBed();
+            var deleteBtn = new Button { Text = "Удалить выбранное", AutoSize = true, Height = 34 };
+            deleteBtn.Click += (s, e) => DeleteSelectedBed();
+            var clearBtn = new Button { Text = "Очистить все", AutoSize = true, Height = 34 };
+            clearBtn.Click += (s, e) => ClearBeds();
+            var saveBtn = new Button { Text = "Сохранить грядки", AutoSize = true, Height = 34 };
+            saveBtn.Click += (s, e) => SaveBeds();
+            buttons.Controls.Add(captureBtn);
+            buttons.Controls.Add(renameBtn);
+            buttons.Controls.Add(deleteBtn);
+            buttons.Controls.Add(clearBtn);
+            buttons.Controls.Add(saveBtn);
+
+            layout.Controls.Add(infoPanel, 0, 0);
+            layout.Controls.Add(_bedsList, 0, 1);
+            layout.Controls.Add(buttons, 0, 2);
+            page.Controls.Add(layout);
+
+            _captureTimer = new Timer { Interval = 25 };
+            _captureTimer.Tick += OnCaptureTick;
+            return page;
+        }
+
+        private TabPage BuildRoutesTab()
+        {
+            var page = new TabPage("Маршруты");
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Padding = new Padding(10)
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            var recordGroup = new GroupBox { Text = "Записать новый маршрут", Dock = DockStyle.Fill, Padding = new Padding(10) };
+            var recordLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
+            recordLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
+            recordLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            recordLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            recordLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            recordLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            recordLayout.Controls.Add(new Label { Text = "Имя маршрута:", TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+            _routeNameCombo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDown };
+            _routeNameCombo.Items.Add("barrel_main");
+            _routeNameCombo.Items.Add("barrel_backup");
+            _routeNameCombo.Items.Add("to_car");
+            _routeNameCombo.SelectedIndex = 0;
+            recordLayout.Controls.Add(_routeNameCombo, 1, 0);
+
+            _recordButton = new Button
+            {
+                Text = "● Начать запись (F10 — закончить запись)",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.White,
+                BackColor = Color.DarkOrange,
+                FlatStyle = FlatStyle.Flat
+            };
+            _recordButton.Click += (s, e) => StartRecording();
+            recordLayout.Controls.Add(_recordButton, 0, 1);
+            recordLayout.Controls.Add(new Label { Text = "От грядок до цели и ОБРАТНО к грядкам", TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray }, 1, 1);
+
+            _recordingHint = new Label { Text = "", Visible = false, ForeColor = Color.Firebrick, TextAlign = ContentAlignment.MiddleLeft };
+            recordLayout.Controls.Add(_recordingHint, 0, 2);
+            recordLayout.SetColumnSpan(_recordingHint, 2);
+
+            recordGroup.Controls.Add(recordLayout);
+
+            var listGroup = new GroupBox { Text = "Сохранённые маршруты (папка routes/)", Dock = DockStyle.Fill, Padding = new Padding(8) };
+            _routesList = new ListBox { Dock = DockStyle.Fill, Font = new Font("Consolas", 10f) };
+            var refreshRoutes = new Button { Text = "Обновить список", Dock = DockStyle.Bottom, Height = 30 };
+            refreshRoutes.Click += (s, e) => LoadRoutesList();
+            listGroup.Controls.Add(_routesList);
+            listGroup.Controls.Add(refreshRoutes);
+
+            layout.Controls.Add(recordGroup, 0, 0);
+            layout.Controls.Add(listGroup, 0, 1);
+            page.Controls.Add(layout);
+            return page;
+        }
+
+        private TabPage BuildTemplatesTab()
+        {
+            var page = new TabPage("Шаблоны");
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(10)
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            var info = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Бот находит кнопки и иконки по картинке. Сохраните скриншот окна, вырежьте в Paint маленькие фрагменты (кнопка «Собрать», иконка паразита…) и положите как 32-битный BMP в папку templates/ — имена должны совпадать с config.json. Подробности: templates/README.md"
+            };
+
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
+            var shotBtn = new Button { Text = "Сохранить скриншот окна игры", AutoSize = true, Height = 32 };
+            shotBtn.Click += (s, e) => SaveScreenshot();
+            var checkBtn = new Button { Text = "Проверить шаблоны на экране", AutoSize = true, Height = 32 };
+            checkBtn.Click += (s, e) => CheckTemplates();
+            buttons.Controls.Add(shotBtn);
+            buttons.Controls.Add(checkBtn);
+
+            _templateResults = new ListBox { Dock = DockStyle.Fill, Font = new Font("Consolas", 9f) };
+
+            layout.Controls.Add(info, 0, 0);
+            layout.Controls.Add(buttons, 0, 1);
+            layout.Controls.Add(_templateResults, 0, 2);
+            page.Controls.Add(layout);
+            return page;
+        }
+
+        private TabPage BuildSettingsTab()
+        {
+            var page = new TabPage("Настройки");
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 15,
+                Padding = new Padding(10)
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            for (int i = 0; i < 14; i++)
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            int row = 0;
+            AddRow(layout, ref row, "Заголовок окна игры содержит:", _windowTitleBox = new TextBox { Dock = DockStyle.Fill });
+            AddRow(layout, ref row, "Точность распознавания (0.5–1.0):", _thresholdBox = MakeDecimal(0.50m, 1.00m, 0.82m, 2));
+            AddRow(layout, ref row, "Вместимость лейки, литров:", _canCapacityBox = MakeDecimal(0.5m, 1000m, 10m, 1));
+            AddRow(layout, ref row, "Литров за одно нажатие:", _litersPerClickBox = MakeDecimal(0.1m, 100m, 1m, 1));
+            AddRow(layout, ref row, "Литров на одну грядку:", _litersPerBedBox = MakeDecimal(0.5m, 100m, 3m, 1));
+            AddRow(layout, ref row, "Воды в одной фляге, литров:", _flaskLitersBox = MakeDecimal(0.5m, 100m, 5m, 1));
+            AddRow(layout, ref row, "Клавиша лейки в хотбаре:", _canKeyBox = new TextBox { Dock = DockStyle.Fill, MaxLength = 12 });
+            AddRow(layout, ref row, "Клавиша фляги в хотбаре:", _flaskKeyBox = new TextBox { Dock = DockStyle.Fill, MaxLength = 12 });
+            AddRow(layout, ref row, "Клавиша семян в хотбаре:", _seedKeyBox = new TextBox { Dock = DockStyle.Fill, MaxLength = 12 });
+            AddRow(layout, ref row, "Клавиша удобрения в хотбаре:", _fertilizerKeyBox = new TextBox { Dock = DockStyle.Fill, MaxLength = 12 });
+            AddRow(layout, ref row, "Анти-афк, раз в (сек):", _afkIntervalBox = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 5, Maximum = 3600, Value = 60 });
+            AddRow(layout, ref row, "Анти-афк, клавиши (через +):", _afkKeysBox = new TextBox { Dock = DockStyle.Fill });
+            AddRow(layout, ref row, "Уровень лога:", _logLevelCombo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList });
+            _logLevelCombo.Items.AddRange(new object[] { "Info", "Debug", "Warn", "Error" });
+            _logLevelCombo.SelectedIndex = 0;
+
+            var saveAll = new Button { Text = "💾  Сохранить все настройки", Dock = DockStyle.Fill, Font = new Font(Font, FontStyle.Bold) };
+            saveAll.Click += (s, e) => SaveAllSettings();
+            layout.Controls.Add(saveAll, 0, row);
+            layout.SetColumnSpan(saveAll, 2);
+
+            var hint = new Label
+            {
+                Dock = DockStyle.Fill,
+                Text = "Файл настроек: " + Path.GetFullPath(_configPath) + "\nИзменения сохраняются туда же (рядом создаётся .bak). Остальные параметры (паразиты→химикаты, предметы багажника, маршруты, шкала химикатов) правятся в config.json вручную."
+            };
+            row++;
+            layout.Controls.Add(hint, 0, row);
+            layout.SetColumnSpan(hint, 2);
+
+            page.Controls.Add(layout);
+            return page;
+        }
+
+        private static void AddRow(TableLayoutPanel layout, ref int row, string label, Control control)
+        {
+            layout.Controls.Add(new Label { Text = label, TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, row);
+            layout.Controls.Add(control, 1, row);
+            row++;
+        }
+
+        private static NumericUpDown MakeDecimal(decimal min, decimal max, decimal value, int decimals)
+        {
+            return new NumericUpDown
+            {
+                Dock = DockStyle.Fill,
+                Minimum = min,
+                Maximum = max,
+                DecimalPlaces = decimals,
+                Increment = decimals == 0 ? 1m : (decimals == 2 ? 0.01m : 0.5m),
+                Value = value
+            };
+        }
+
+        // ==================== Журнал ====================
+
+        private void OnLogLine(string line, LogLevel level)
+        {
+            if (IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke(new Action(() => AppendLog(line, level)));
+                }
+                catch (Exception)
+                {
+                    // форма закрывается — игнорируем
+                }
+                return;
+            }
+            AppendLog(line, level);
+        }
+
+        private void AppendLog(string line, LogLevel level)
+        {
+            if (_logBox == null || _logBox.IsDisposed) return;
+            Color color = Color.Gainsboro;
+            switch (level)
+            {
+                case LogLevel.Debug: color = Color.DarkGray; break;
+                case LogLevel.Info: color = Color.Gainsboro; break;
+                case LogLevel.Warn: color = Color.Gold; break;
+                case LogLevel.Error: color = Color.Tomato; break;
+            }
+            _logBox.SelectionStart = _logBox.TextLength;
+            _logBox.SelectionLength = 0;
+            _logBox.SelectionColor = color;
+            _logBox.AppendText(line + Environment.NewLine);
+            if (_logBox.Lines.Length > WizLogMaxLines)
+            {
+                int remove = _logBox.Text.IndexOf('\n');
+                if (remove > 0)
+                {
+                    _logBox.SelectionStart = 0;
+                    _logBox.SelectionLength = remove + 1;
+                    _logBox.SelectionColor = color;
+                    _logBox.SelectedText = string.Empty;
+                }
+            }
+            _logBox.SelectionStart = _logBox.TextLength;
+            _logBox.ScrollToCaret();
+        }
+
+        private void SetStatus(string text)
+        {
+            if (_statusLabel != null && !_statusLabel.IsDisposed)
+                _statusLabel.Text = "Статус: " + text;
+        }
+
+        // ==================== Запуск / остановка бота ====================
+
+        private async Task StartBotAsync()
+        {
+            if (_botRunning) return;
+            SaveAllSettings(); // заодно зафиксируем последние правки
+            if (_cfg.Beds.Count == 0 && _beds.Count == 0)
+            {
+                MessageBox.Show(
+                    "Сначала настройте грядки: вкладка «Грядки» → «Захват точек».",
+                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _tabs.SelectedIndex = 1;
+                return;
+            }
+
+            // Гарантируем, что грядки в конфиге совпадают со списком в окне
+            _cfg.Beds = new List<BedPoint>(_beds);
+            ConfigService.Save(_configPath, _cfg, _log);
+
+            Bot bot = new Bot(_cfg, _configPath, _log);
+            _bot = bot;
+            _botRunning = true;
+            UpdateRunButtons();
+            SetStatus("работает… (F12 — стоп)");
+
+            Task<int> runTask = Task.Run(() => bot.Run(false));
+            int code = await runTask.ConfigureAwait(true);
+            OnBotFinished(code);
+        }
+
+        private void StopBot()
+        {
+            _bot?.RequestStop();
+            SetStatus("останавливаю…");
+            _log.Info("Запрошена остановка бота (кнопка «Стоп»)");
+        }
+
+        private void OnBotFinished(int code)
+        {
+            _botRunning = false;
+            _bot = null;
+            UpdateRunButtons();
+            SetStatus("остановлен (код выхода " + code + ")");
+            LoadRoutesList();
+        }
+
+        private void UpdateRunButtons()
+        {
+            _startButton.Enabled = !_botRunning && !_recording;
+            _stopButton.Enabled = _botRunning;
+            _recordButton.Enabled = !_recording && !_botRunning;
+        }
+
+        private void OnFormClosing(object? sender, FormClosingEventArgs e)
+        {
+            if (_botRunning && _bot != null)
+            {
+                DialogResult answer = MessageBox.Show(
+                    "Бот сейчас работает. Остановить его и выйти?",
+                    "AmazingBot", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (answer == DialogResult.Yes)
+                {
+                    _bot.RequestStop();
+                }
+                else
+                {
+                    e.Cancel = true;
+                }
+            }
+        }
+
+        // ==================== Грядки ====================
+
+        private void StartCapture()
+        {
+            if (_capturing) return;
+            var vision = CreateVision();
+            if (!vision.Refresh())
+            {
+                MessageBox.Show(
+                    "Окно игры не найдено. Запустите Amazing Online в оконном режиме.\nЕсли заголовок окна изменился — поправьте «Заголовок окна игры» на вкладке «Настройки».",
+                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            _captureVision = vision;
+            _captureOriginX = vision.ClientOriginX;
+            _captureOriginY = vision.ClientOriginY;
+
+            if (_beds.Count > 0)
+            {
+                DialogResult replace = MessageBox.Show(
+                    "В конфиге уже есть " + _beds.Count + " грядок. Заменить их новым набором точек?",
+                    "AmazingBot", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (replace != DialogResult.Yes)
+                    return;
+            }
+
+            _beds.Clear();
+            ReloadBedsList();
+            _capturing = true;
+            _f8WasDown = false;
+            _captureHint.Text = "ИДЁТ ЗАХВАТ: наведите мышь на грядку и нажмите F8. F9 — закончить.";
+            _captureHint.Visible = true;
+            _captureTimer.Start();
+            _log.Info("Захват точек грядок начался. F8 — точка, F9 — закончить.");
+        }
+
+        private void OnCaptureTick(object? sender, EventArgs e)
+        {
+            if (!_capturing) return;
+            if (NativeMethods.KeyDown(NativeMethods.VK_F9))
+            {
+                StopCapture();
+                return;
+            }
+            bool f8 = NativeMethods.KeyDown(NativeMethods.VK_F8);
+            if (f8 && !_f8WasDown)
+            {
+                Native.POINT p = ScreenCapture.GetCursorPosition();
+                int relX = p.X - _captureOriginX;
+                int relY = p.Y - _captureOriginY;
+                string name = "bed" + (_beds.Count + 1);
+                _beds.Add(new BedPoint { Name = name, X = relX, Y = relY });
+                ReloadBedsList();
+                _log.Info("Грядка " + name + ": клиент (" + relX + ", " + relY + ")");
+            }
+            _f8WasDown = f8;
+        }
+
+        private void StopCapture()
+        {
+            _capturing = false;
+            _captureTimer.Stop();
+            _captureHint.Visible = false;
+            _captureHint.Text = string.Empty;
+            if (_beds.Count > 0)
+            {
+                SaveBeds();
+                MessageBox.Show(
+                    "Захват завершён. Сохранено грядок: " + _beds.Count + ".\nПереименуйте их на вкладке (двойной смысл — «Переименовать»), если нужно.",
+                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                _log.Warn("Захват завершён без точек — конфиг не изменён");
+            }
+        }
+
+        private void ReloadBedsList()
+        {
+            _bedsList.Items.Clear();
+            foreach (BedPoint bed in _beds)
+            {
+                var item = new ListViewItem(bed.Name);
+                item.SubItems.Add(bed.X.ToString());
+                item.SubItems.Add(bed.Y.ToString());
+                _bedsList.Items.Add(item);
+            }
+        }
+
+        private void RenameSelectedBed()
+        {
+            if (_bedsList.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("Выберите грядку в списке.", "AmazingBot");
+                return;
+            }
+            int index = _bedsList.SelectedIndices[0];
+            string? name = PromptDialog.Show("Переименовать грядку", "Имя грядки:", _beds[index].Name);
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+            _beds[index].Name = name.Trim();
+            ReloadBedsList();
+            SaveBeds();
+        }
+
+        private void DeleteSelectedBed()
+        {
+            if (_bedsList.SelectedIndices.Count == 0)
+            {
+                MessageBox.Show("Выберите грядку в списке.", "AmazingBot");
+                return;
+            }
+            _beds.RemoveAt(_bedsList.SelectedIndices[0]);
+            ReloadBedsList();
+            SaveBeds();
+        }
+
+        private void ClearBeds()
+        {
+            if (_beds.Count == 0) return;
+            if (MessageBox.Show("Удалить все " + _beds.Count + " грядок из конфига?", "AmazingBot",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            _beds.Clear();
+            ReloadBedsList();
+            SaveBeds();
+        }
+
+        private void SaveBeds()
+        {
+            _cfg.Beds = new List<BedPoint>(_beds);
+            ConfigService.Save(_configPath, _cfg, _log);
+            SetStatus("грядки сохранены (" + _beds.Count + ")");
+        }
+
+        // ==================== Маршруты ====================
+
+        private void StartRecording()
+        {
+            if (_recording) return;
+            string name = (_routeNameCombo.Text ?? string.Empty).Trim();
+            if (name.Length == 0)
+            {
+                MessageBox.Show("Введите имя маршрута.", "AmazingBot");
+                return;
+            }
+            foreach (char c in Path.GetInvalidFileNameChars())
+                name = name.Replace(c, '_');
+            name = name.Replace(' ', '_');
+            _routeNameCombo.Text = name;
+
+            var vision = CreateVision();
+            if (!vision.Refresh())
+            {
+                MessageBox.Show(
+                    "Окно игры не найдено. Запустите Amazing Online в оконном режиме.",
+                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int originX = vision.ClientOriginX;
+            int originY = vision.ClientOriginY;
+
+            MessageBox.Show(
+                "Запись маршрута «" + name + "» начнётся после нажатия ОК.\n\nДелайте всё как обычно: дойдите до цели и ВЕРНИТЕСЬ к грядкам. Клики и клавиши запишутся автоматически.\nОкно игры не двигайте!\n\nЗакончить запись — F10.",
+                "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+            _recording = true;
+            UpdateRunButtons();
+            _recordingHint.Text = "ИДЁТ ЗАПИСЬ маршрута «" + name + "»… F10 — закончить.";
+            _recordingHint.Visible = true;
+            SetStatus("запись маршрута «" + name + "»…");
+
+            Thread recorderThread = new Thread(() =>
+            {
+                try
+                {
+                    var recorder = new RouteRecorder(_log);
+                    RouteFile route = recorder.Record(name, originX, originY);
+                    RoutePlayer.Save(_cfg.RoutesDir, route, _log);
+                    int steps = route.Steps.Count;
+                    BeginInvoke(new Action(() => FinishRecording(name, steps, null)));
+                }
+                catch (Exception ex)
+                {
+                    BeginInvoke(new Action(() => FinishRecording(name, 0, ex)));
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "RouteRecorderThread"
+            };
+            recorderThread.SetApartmentState(ApartmentState.STA);
+            recorderThread.Start();
+        }
+
+        private void FinishRecording(string name, int stepCount, Exception? error)
+        {
+            _recording = false;
+            UpdateRunButtons();
+            _recordingHint.Visible = false;
+            _recordingHint.Text = string.Empty;
+            if (error != null)
+            {
+                _log.Exception("Ошибка записи маршрута «" + name + "»", error);
+                MessageBox.Show("Ошибка записи: " + error.Message, "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SetStatus("ошибка записи маршрута");
+                return;
+            }
+            _log.Info("Маршрут «" + name + "» записан: " + stepCount + " шагов");
+            SetStatus("маршрут «" + name + "» сохранён (" + stepCount + " шагов)");
+            LoadRoutesList();
+        }
+
+        private void LoadRoutesList()
+        {
+            if (_routesList == null || _routesList.IsDisposed) return;
+            _routesList.Items.Clear();
+            string dir = _cfg.RoutesDir;
+            if (!Directory.Exists(dir))
+            {
+                _routesList.Items.Add("(папка routes/ ещё не создана)");
+                return;
+            }
+            string[] files = Directory.GetFiles(dir, "*.json");
+            Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+            if (files.Length == 0)
+            {
+                _routesList.Items.Add("(пока нет записанных маршрутов)");
+                return;
+            }
+            foreach (string file in files)
+            {
+                string name = Path.GetFileNameWithoutExtension(file);
+                long size = new FileInfo(file).Length;
+                _routesList.Items.Add(name.PadRight(24) + "  " + size + " байт");
+            }
+        }
+
+        // ==================== Шаблоны ====================
+
+        private void SaveScreenshot()
+        {
+            var vision = CreateVision();
+            if (!vision.Refresh() || vision.Current == null)
+            {
+                MessageBox.Show(
+                    "Окно игры не найдено. Запустите Amazing Online в оконном режиме.",
+                    "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string outPath = Path.GetFullPath("screenshot.bmp");
+            BmpCodec.Save(outPath, vision.Current.Image);
+            _templateResults.Items.Add("Снимок сохранён: " + outPath + " (" + vision.Current.Width + "x" + vision.Current.Height + ")");
+            _templateResults.Items.Add("Вырежьте элементы в Paint → сохраните как 32-битный BMP в templates/");
+            MessageBox.Show("Снимок сохранён:\n" + outPath, "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void CheckTemplates()
+        {
+            _templateResults.Items.Clear();
+            var vision = CreateVision();
+            if (!vision.Refresh())
+            {
+                _templateResults.Items.Add("Окно игры не найдено.");
+                return;
+            }
+
+            double threshold = _cfg.MatchThreshold;
+            string dir = _cfg.TemplatesDir;
+            if (!Directory.Exists(dir))
+            {
+                _templateResults.Items.Add("Папка шаблонов не найдена: " + Path.GetFullPath(dir));
+                return;
+            }
+
+            string[] files = Directory.GetFiles(dir, "*.bmp");
+            Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+            if (files.Length == 0)
+            {
+                _templateResults.Items.Add("В templates/ нет ни одного .bmp — сначала сохраните скриншот и нарежьте шаблоны.");
+            }
+            else
+            {
+                _templateResults.Items.Add("=== Шаблоны на текущем экране ===");
+                foreach (string file in files)
+                {
+                    string name = Path.GetFileNameWithoutExtension(file);
+                    try
+                    {
+                        Match? m = vision.Find(name, Math.Max(0.55, threshold - 0.25));
+                        if (m != null)
+                            _templateResults.Items.Add("[виден]     " + name.PadRight(26) + " score=" + m.Score.ToString("0.000") + " при (" + m.X + "," + m.Y + ")");
+                        else
+                            _templateResults.Items.Add("[не виден]  " + name);
+                    }
+                    catch (Exception ex)
+                    {
+                        _templateResults.Items.Add("[ошибка]    " + name + ": " + ex.Message);
+                    }
+                }
+            }
+
+            _templateResults.Items.Add("");
+            _templateResults.Items.Add("=== Шаблоны из конфига, которых нет на диске ===");
+            bool anyMissing = false;
+            foreach (string required in RequiredTemplateNames())
+            {
+                if (!File.Exists(vision.TemplatePath(required)))
+                {
+                    _templateResults.Items.Add("НЕТ ФАЙЛА: " + required + ".bmp");
+                    anyMissing = true;
+                }
+            }
+            if (!anyMissing)
+                _templateResults.Items.Add("(все на месте)");
+        }
+
+        private IEnumerable<string> RequiredTemplateNames()
+        {
+            var names = new List<string>
+            {
+                _cfg.Templates.CropReady,
+                _cfg.Templates.EmptyBed,
+                _cfg.Templates.NeedsFertilizer,
+                _cfg.Templates.MoistureLow,
+                _cfg.Templates.MoistureFull,
+                string.Equals(_cfg.HarvestMode, "clone", StringComparison.OrdinalIgnoreCase) ? _cfg.Templates.CloneButton : _cfg.Templates.HarvestButton,
+                _cfg.Watering.CanTemplate,
+                _cfg.Watering.BrokenCanTemplate
+            };
+            if (!string.IsNullOrWhiteSpace(_cfg.Templates.ClosePanel)) names.Add(_cfg.Templates.ClosePanel);
+            if (!string.IsNullOrWhiteSpace(_cfg.Watering.MainBarrelEmptyTemplate)) names.Add(_cfg.Watering.MainBarrelEmptyTemplate);
+            if (!string.IsNullOrWhiteSpace(_cfg.Watering.BackupBarrelEmptyTemplate)) names.Add(_cfg.Watering.BackupBarrelEmptyTemplate);
+            if (!string.IsNullOrWhiteSpace(_cfg.Car.RespawnNoticeTemplate)) names.Add(_cfg.Car.RespawnNoticeTemplate);
+            foreach (ParasiteMap p in _cfg.Parasites)
+            {
+                names.Add(p.Parasite);
+                names.Add(p.Chemical);
+            }
+            foreach (TrunkItemConfig t in _cfg.Trunk.Items)
+                names.Add(t.Template);
+            return names.Where(n => !string.IsNullOrWhiteSpace(n)).Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        // ==================== Настройки ====================
+
+        private void LoadConfigIntoControls()
+        {
+            _windowTitleBox.Text = _cfg.WindowTitleContains;
+            _thresholdBox.Value = (decimal)Math.Max(0.5, Math.Min(1.0, _cfg.MatchThreshold));
+            _canCapacityBox.Value = (decimal)Math.Min((double)_canCapacityBox.Maximum, Math.Max((double)_canCapacityBox.Minimum, _cfg.Watering.CanCapacityLiters));
+            _litersPerClickBox.Value = (decimal)Math.Min((double)_litersPerClickBox.Maximum, Math.Max((double)_litersPerClickBox.Minimum, _cfg.Watering.LitersPerClick));
+            _litersPerBedBox.Value = (decimal)Math.Min((double)_litersPerBedBox.Maximum, Math.Max((double)_litersPerBedBox.Minimum, _cfg.Watering.LitersPerBed));
+            _flaskLitersBox.Value = (decimal)Math.Min((double)_flaskLitersBox.Maximum, Math.Max((double)_flaskLitersBox.Minimum, _cfg.Watering.FlaskLiters));
+            _canKeyBox.Text = _cfg.Watering.CanHotbarKey;
+            _flaskKeyBox.Text = _cfg.Watering.FlaskHotbarKey;
+            _seedKeyBox.Text = _cfg.Planting.SeedHotbarKey;
+            _fertilizerKeyBox.Text = _cfg.FertilizerHotbarKey;
+            _afkIntervalBox.Value = Math.Min(_afkIntervalBox.Maximum, Math.Max(_afkIntervalBox.Minimum, _cfg.AntiAfk.IntervalSeconds));
+            _afkKeysBox.Text = string.Join(" + ", _cfg.AntiAfk.Keys);
+            int logIndex = _logLevelCombo.Items.IndexOf(_cfg.LogLevel);
+            _logLevelCombo.SelectedIndex = logIndex >= 0 ? logIndex : 0;
+
+            _harvestModeCombo.SelectedIndex = string.Equals(_cfg.HarvestMode, "clone", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            _intervalBox.Value = Math.Min(_intervalBox.Maximum, Math.Max(_intervalBox.Minimum, _cfg.CheckIntervalSeconds));
+            _autoDisableCheck.Checked = _cfg.AutoDisableOnAllBedsDone;
+            _antiAfkCheck.Checked = _cfg.AntiAfk.Enabled;
+        }
+
+        private void SaveAllSettings()
+        {
+            _cfg.WindowTitleContains = _windowTitleBox.Text.Trim();
+            _cfg.MatchThreshold = (double)_thresholdBox.Value;
+            _cfg.Watering.CanCapacityLiters = (double)_canCapacityBox.Value;
+            _cfg.Watering.LitersPerClick = (double)_litersPerClickBox.Value;
+            _cfg.Watering.LitersPerBed = (double)_litersPerBedBox.Value;
+            _cfg.Watering.FlaskLiters = (double)_flaskLitersBox.Value;
+            _cfg.Watering.CanHotbarKey = _canKeyBox.Text.Trim();
+            _cfg.Watering.FlaskHotbarKey = _flaskKeyBox.Text.Trim();
+            _cfg.Planting.SeedHotbarKey = _seedKeyBox.Text.Trim();
+            _cfg.FertilizerHotbarKey = _fertilizerKeyBox.Text.Trim();
+            _cfg.AntiAfk.IntervalSeconds = (int)_afkIntervalBox.Value;
+            _cfg.AntiAfk.Keys = _afkKeysBox.Text
+                .Split(new[] { '+', ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(k => k.Trim())
+                .Where(k => k.Length > 0)
+                .ToList();
+            _cfg.LogLevel = _logLevelCombo.SelectedItem?.ToString() ?? "Info";
+
+            _cfg.HarvestMode = _harvestModeCombo.SelectedIndex == 1 ? "clone" : "harvest";
+            _cfg.CheckIntervalSeconds = (int)_intervalBox.Value;
+            _cfg.AutoDisableOnAllBedsDone = _autoDisableCheck.Checked;
+            _cfg.AntiAfk.Enabled = _antiAfkCheck.Checked;
+            _cfg.Beds = new List<BedPoint>(_beds);
+
+            _log.MinimumLevel = ParseLogLevel(_cfg.LogLevel);
+            ConfigService.Save(_configPath, _cfg, _log);
+            SetStatus("настройки сохранены");
+        }
+
+        // ==================== Утилиты ====================
+
+        private VisionService CreateVision()
+        {
+            return new VisionService(_cfg.WindowTitleContains, Path.GetFullPath(_cfg.TemplatesDir), _log);
+        }
+
+        private static LogLevel ParseLogLevel(string? value)
+        {
+            switch ((value ?? "Info").Trim().ToLowerInvariant())
+            {
+                case "debug": return LogLevel.Debug;
+                case "warn": return LogLevel.Warn;
+                case "error": return LogLevel.Error;
+                default: return LogLevel.Info;
+            }
+        }
+
+        // ==================== Вложенный диалог ввода ====================
+
+        private sealed class PromptDialog : Form
+        {
+            private readonly TextBox _box;
+
+            private PromptDialog(string title, string prompt, string initial)
+            {
+                Text = title;
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                StartPosition = FormStartPosition.CenterParent;
+                ClientSize = new Size(380, 130);
+                MaximizeBox = false;
+                MinimizeBox = false;
+                ShowInTaskbar = false;
+
+                var label = new Label { Text = prompt, Left = 12, Top = 12, Width = 356, AutoSize = true };
+                _box = new TextBox { Left = 12, Top = 36, Width = 356, Text = initial };
+                var ok = new Button { Text = "ОК", Left = 212, Top = 66, Width = 70, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Отмена", Left = 292, Top = 66, Width = 76, DialogResult = DialogResult.Cancel };
+                AcceptButton = ok;
+                CancelButton = cancel;
+                Controls.Add(label);
+                Controls.Add(_box);
+                Controls.Add(ok);
+                Controls.Add(cancel);
+            }
+
+            public static string? Show(string title, string prompt, string initial)
+            {
+                using (var dialog = new PromptDialog(title, prompt, initial))
+                {
+                    return dialog.ShowDialog() == DialogResult.OK ? dialog._box.Text : null;
+                }
+            }
+        }
+    }
+}
