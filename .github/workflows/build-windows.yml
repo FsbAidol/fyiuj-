@@ -41,16 +41,21 @@ jobs:
             out/gui/AmazingBot.App.exe
             out/cli/AmazingBot.exe
 
+      - name: Prepare release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Copy-Item -LiteralPath "ИНСТРУКЦИЯ.md" -Destination "INSTRUCTION.md"
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
           gh release create "${{ github.ref_name }}"
-          "out/gui/AmazingBot.App.exe#AmazingBot.App.exe — оконное меню для бота"
-          "out/cli/AmazingBot.exe#AmazingBot.exe — консольное меню и CLI"
-          "configs/config.example.json#config.example.json — пример конфига (переименовать в config.json)"
-          "ИНСТРУКЦИЯ.md#ИНСТРУКЦИЯ.md — установка и использование"
+          "out/gui/AmazingBot.App.exe#AmazingBot.App.exe"
+          "out/cli/AmazingBot.exe#AmazingBot.exe"
+          "configs/config.example.json#config.example.json"
+          "INSTRUCTION.md#INSTRUCTION.md"
           --title "AmazingBot ${{ github.ref_name }}"
           --notes "Готовые сборки AmazingBot для Windows (self-contained, .NET не нужен).
 
