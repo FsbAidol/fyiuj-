@@ -444,18 +444,18 @@ namespace AmazingBot.App
         private void CaptureTemplate(string templateName, string displayName)
         {
             if (string.IsNullOrWhiteSpace(templateName)) return;
-            var vision = CreateVision();
-            if (!vision.Refresh() || vision.Current == null)
+            CapturedFrame? frame = CaptureGameFrameWithoutBot();
+            if (frame == null)
             {
                 MessageBox.Show("Окно игры не найдено. Запустите игру в оконном/безрамочном режиме и проверьте заголовок в настройках.", "Обучение распознавания", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            using (var selector = new CropSelectorForm(vision.Current.Image, displayName))
+            using (var selector = new CropSelectorForm(frame.Image, displayName))
             {
                 if (selector.ShowDialog(this) != DialogResult.OK) return;
                 try
                 {
-                    BitmapImage crop = vision.Current.Image.Crop(selector.SelectedCrop.X, selector.SelectedCrop.Y, selector.SelectedCrop.Width, selector.SelectedCrop.Height);
+                    BitmapImage crop = frame.Image.Crop(selector.SelectedCrop.X, selector.SelectedCrop.Y, selector.SelectedCrop.Width, selector.SelectedCrop.Height);
                     string dir = Path.GetFullPath(_cfg.TemplatesDir);
                     Directory.CreateDirectory(dir);
                     string path = Path.Combine(dir, templateName + ".bmp");
@@ -513,7 +513,7 @@ namespace AmazingBot.App
             {
                 Dock = DockStyle.Fill,
                 Padding = new Padding(12, 8, 12, 8),
-                Text = "Выбрать грядки: нажмите «Отметить грядки на превью», затем щёлкните по центру каждой грядки. Проверьте номера и нажмите «Сохранить точки». Это обходит блокировку курсора в игре. F8 не используется."
+                Text = "Нажмите «Отметить грядки на превью». Бот временно скроется, снимет только игру и откроет кадр для разметки. Щёлкните по центру каждой грядки, проверьте номера и сохраните точки. Окно бота в кадр не попадёт."
             };
             var infoPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
             infoPanel.Controls.Add(info);
@@ -946,14 +946,14 @@ namespace AmazingBot.App
                 return;
 
             SaveAllSettings();
-            var vision = CreateVision();
-            if (!vision.Refresh() || vision.Current == null)
+            CapturedFrame? frame = CaptureGameFrameWithoutBot();
+            if (frame == null)
             {
-                MessageBox.Show("Окно игры не найдено. Оставьте игру открытой в оконном режиме и проверьте заголовок в настройках.", "Выбор грядок", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Окно игры не найдено или кадр не захвачен. Оставьте игру открытой в оконном режиме и проверьте заголовок в настройках.", "Выбор грядок", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            using (var picker = new BedMarkerForm(vision.Current.Image))
+            using (var picker = new BedMarkerForm(frame.Image))
             {
                 if (picker.ShowDialog(this) != DialogResult.OK) return;
                 if (picker.Points.Count == 0) return;
@@ -1137,8 +1137,8 @@ namespace AmazingBot.App
 
         private void SaveScreenshot()
         {
-            var vision = CreateVision();
-            if (!vision.Refresh() || vision.Current == null)
+            CapturedFrame? frame = CaptureGameFrameWithoutBot();
+            if (frame == null)
             {
                 MessageBox.Show(
                     "Окно игры не найдено. Запустите Amazing Online в оконном режиме.",
@@ -1146,13 +1146,34 @@ namespace AmazingBot.App
                 return;
             }
             string outPath = Path.GetFullPath("screenshot.bmp");
-            BmpCodec.Save(outPath, vision.Current.Image);
-            _templateResults.Items.Add("Снимок сохранён: " + outPath + " (" + vision.Current.Width + "x" + vision.Current.Height + ")");
+            BmpCodec.Save(outPath, frame.Image);
+            _templateResults.Items.Add("Снимок сохранён: " + outPath + " (" + frame.Width + "x" + frame.Height + ")");
             _templateResults.Items.Add("Вырежьте элементы в Paint → сохраните как 32-битный BMP в templates/");
             MessageBox.Show("Снимок сохранён:\n" + outPath, "AmazingBot", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void CheckTemplates()
+        {
+            Hide();
+            try
+            {
+                Thread.Sleep(250);
+                var game = CreateVision();
+                if (game.EnsureWindow())
+                {
+                    NativeMethods.SetForegroundWindow(game.WindowHandle);
+                    Thread.Sleep(200);
+                }
+                CheckTemplatesCore();
+            }
+            finally
+            {
+                Show();
+                Activate();
+            }
+        }
+
+        private void CheckTemplatesCore()
         {
             _templateResults.Items.Clear();
             var vision = CreateVision();
@@ -1318,6 +1339,25 @@ namespace AmazingBot.App
         }
 
         // ==================== Утилиты ====================
+
+        private CapturedFrame? CaptureGameFrameWithoutBot()
+        {
+            Hide();
+            try
+            {
+                Thread.Sleep(250); // let Windows redraw the game after hiding this form
+                var vision = CreateVision();
+                if (!vision.EnsureWindow()) return null;
+                NativeMethods.SetForegroundWindow(vision.WindowHandle);
+                Thread.Sleep(200);
+                return vision.Refresh() ? vision.Current : null;
+            }
+            finally
+            {
+                Show();
+                Activate();
+            }
+        }
 
         private VisionService CreateVision()
         {
