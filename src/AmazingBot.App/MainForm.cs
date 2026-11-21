@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Timer = System.Windows.Forms.Timer;
 using AmazingBot.Config;
 using AmazingBot.Core;
 using AmazingBot.Input;
