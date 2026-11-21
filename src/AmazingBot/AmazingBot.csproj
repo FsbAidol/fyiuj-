@@ -19,7 +19,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.3.1.260716.1" />
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.2.0.241111.1" />
   </ItemGroup>
 
 </Project>
