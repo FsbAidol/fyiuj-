@@ -25,7 +25,18 @@ jobs:
         run: dotnet restore AmazingBot.sln
 
       - name: Build
-        run: dotnet build AmazingBot.sln -c Release --no-restore
+        shell: pwsh
+        run: |
+          $buildOutput = dotnet build AmazingBot.sln -c Release --no-restore 2>&1
+          $buildExitCode = $LASTEXITCODE
+          $buildOutput | ForEach-Object { Write-Output $_ }
+          if ($buildExitCode -ne 0) {
+            $buildOutput | Where-Object { "$_" -match 'error ' } | ForEach-Object {
+              $message = "$_" -replace '%', '%25' -replace '\\r', '%0D' -replace '\\n', '%0A' -replace ':', '%3A' -replace ',', '%2C'
+              Write-Host "::error title=Build compiler error::$message"
+            }
+          }
+          exit $buildExitCode
 
       - name: Publish GUI (single file, self-contained)
         run: dotnet publish src/AmazingBot.App/AmazingBot.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out/gui
