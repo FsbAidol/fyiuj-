@@ -1,0 +1,62 @@
+name: build-windows
+
+on:
+  push:
+    branches: [ main, arena/dfd52b60-fyiuj ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore AmazingBot.sln
+
+      - name: Build
+        run: dotnet build AmazingBot.sln -c Release --no-restore
+
+      - name: Publish GUI (single file, self-contained)
+        run: dotnet publish src/AmazingBot.App/AmazingBot.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out/gui
+
+      - name: Publish CLI (single file, self-contained)
+        run: dotnet publish src/AmazingBot/AmazingBot.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out/cli
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmazingBot-win-x64
+          path: |
+            out/gui/AmazingBot.App.exe
+            out/cli/AmazingBot.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          "out/gui/AmazingBot.App.exe#AmazingBot.App.exe — оконное меню для бота"
+          "out/cli/AmazingBot.exe#AmazingBot.exe — консольное меню и CLI"
+          "configs/config.example.json#config.example.json — пример конфига (переименовать в config.json)"
+          "ИНСТРУКЦИЯ.md#ИНСТРУКЦИЯ.md — установка и использование"
+          --title "AmazingBot ${{ github.ref_name }}"
+          --notes "Готовые сборки AmazingBot для Windows (self-contained, .NET не нужен).
+
+          Что внутри:
+          - проход по грядкам: паразиты, удобрение, точный полив, посадка, сбор или клонирование;
+          - пополнение лейки (фляга / основная и резервная бочка по маршруту);
+          - багажник машины: пополнение фляг, химикатов, удобрения, семян, замена сломанной лейки, занятие машины при респавне;
+          - анти-афк, авто-отключение после сбора всех грядок, F12 — экстренная остановка.
+
+          Скачать exe → положить config.example.json как config.json и заполнить → запустить AmazingBot.App.exe → вкладка «Шаблоны»: снять скриншот и нарезать шаблоны → «Грядки»: F8/F9 → «Маршруты»: записать маршруты → «Главная»: ЗАПУСТИТЬ.
+
+          Подробно: ИНСТРУКЦИЯ.md в ассетах этого релиза и в репозитории."
