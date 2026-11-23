@@ -1,0 +1,17 @@
+# core (required)
+opencv-python-headless>=4.8
+numpy>=1.24
+PyYAML>=6.0
+
+# desktop backend (game window on the same PC)
+mss>=9.0 ; platform_system != "Emscripten"
+pyautogui>=0.9.54 ; platform_system != "Emscripten"
+
+# optional: reading the random net-cleaning letter / weight OCR
+pytesseract>=0.3.10
+
+# optional: F8/F9/F12 hotkeys
+pynput>=1.7
+
+# tests
+pytest>=7.0

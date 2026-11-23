@@ -1,0 +1,25 @@
+name: clear_trash
+description: >-
+  Убрать мусор из сетки. В Amazing Online это часто QTE: игра показывает
+  случайную латинскую букву, её нужно УДЕРЖИВАТЬ до исчезновения подсказки.
+  Бот распознаёт букву (Tesseract + проверка формы: P/D, Q/O, X) и держит её.
+  Если подсказки нет — делает обычный свайп (фолбэк).
+steps:
+  - hook: pause_fishing
+  - log: "чистим сетку от мусора"
+  - prompt_key:
+      timeout: 8            # сколько ждать появления буквы
+      hold_timeout: 28      # максимум удержания
+      optional: true        # нет буквы = мусора нет, это не ошибка
+  - if_exists: trash_on_net
+    steps:
+      - repeat: 3
+        steps:
+          - swipe:
+              from: [0.40, 0.34]
+              to: [0.45, 0.62]
+              ms: 260
+          - wait: 0.5
+        until: absent:trash_on_net
+  - wait: 0.3
+  - hook: resume_fishing

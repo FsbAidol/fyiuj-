@@ -1,0 +1,45 @@
+name: trunk_restock
+description: >-
+  Взять новую сетку из багажника машины после того, как текущая порвалась.
+  В Amazing Online машина вызывается командой в чате (/car), багажник - /trunk,
+  персонаж садится/выходит по Enter. Подстройте шаги под свою сборку.
+steps:
+  - hook: pause_fishing
+  - log: "вызываем машину"
+  - chat_command: "/car"        # W/A/S/D - подъехать, если нужно
+    optional: true
+  - wait: 2.5
+  - if_exists: car_near        # если видно подсказку «сесть в машину»
+    steps:
+      - key: enter
+      - wait: 1.0
+  # Если машина уже рядом - просто открываем багажник
+  - chat_command: "/trunk"
+    optional: true
+  - tap_template: trunk_button   # либо кнопка багажника в интерфейсе
+    timeout: 4
+    optional: true
+  - wait: 0.8
+  - wait_for: trunk_window       # багажник открыт?
+    timeout: 6
+  - tap_template: net_item       # взять сетку
+    timeout: 4
+  - repeat: 2                    # запас: две сетки за поездку
+    steps:
+      - tap_template: net_item
+        timeout: 1.5
+        optional: true
+      - wait: 0.3
+  - tap_template: take_button
+    timeout: 2
+    optional: true
+  - wait: 0.8
+  - if_exists: trunk_window
+    steps:
+      - tap_template: close_button
+        optional: true
+  - wait: 0.6
+  - log: "сетка в сумке, возвращаемся на воду"
+  - key: escape                  # закрыть меню/чат, если открыт
+    optional: true
+  - hook: resume_fishing

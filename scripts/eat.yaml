@@ -1,0 +1,32 @@
+name: eat
+description: >-
+  Съесть еду из инвентаря, когда полоска голода ниже hud.food.low.
+  Замените названия шаблонов на свои (папка templates/).
+steps:
+  - hook: pause_fishing           # ничего не тапаем во время анимации заброса
+  # сумка может быть уже открыта (например, после предыдущего действия)
+  - if_exists: bag_button
+    steps:
+      - tap_template: bag_button    # открыть сумку/инвентарь
+        timeout: 3
+      - wait: 0.5
+  - if_exists: food_tab
+    steps:
+      - tap_template: food_tab
+      - wait: 0.4
+  # берём самый сытный предмет; повторяем, пока он есть в списке
+  - repeat: 3
+    steps:
+      - tap_template: food_item
+        timeout: 2
+        optional: true
+      - wait: 0.5
+      - tap_template: use_button
+        timeout: 2
+        optional: true
+      - wait: 0.7
+    until: absent:food_item
+  - tap_template: close_button
+    optional: true
+  - wait: 0.4
+  - hook: resume_fishing

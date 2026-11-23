@@ -1,0 +1,30 @@
+name: drink
+description: >-
+  Выпить воду, когда полоска жажды ниже hud.thirst.low.
+steps:
+  - hook: pause_fishing
+  # сумка может быть уже открыта (например, после предыдущего действия)
+  - if_exists: bag_button
+    steps:
+      - tap_template: bag_button
+        timeout: 3
+      - wait: 0.5
+  - if_exists: drink_tab
+    steps:
+      - tap_template: drink_tab
+      - wait: 0.4
+  - repeat: 3
+    steps:
+      - tap_template: water_item
+        timeout: 2
+        optional: true
+      - wait: 0.5
+      - tap_template: use_button
+        timeout: 2
+        optional: true
+      - wait: 0.7
+    until: absent:water_item
+  - tap_template: close_button
+    optional: true
+  - wait: 0.4
+  - hook: resume_fishing

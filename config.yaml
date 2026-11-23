@@ -1,0 +1,209 @@
+# =============================================================================
+#  Amazing Online - fishing automation config
+#  Все регионы задаются в ОТНОСИТЕЛЬНЫХ координатах: [x, y, ширина, высота],
+#  где 0..1 - доля экрана.  Так конфиг не ломается при смене разрешения.
+#  Подобрать регионы: python -m bot calibrate
+# =============================================================================
+
+device:
+  backend: adb            # adb | desktop | images | video
+  adb_path: adb
+  serial: ""              # пусто = первое устройство из `adb devices`
+  monitor: 1              # только для backend: desktop (номер монитора)
+  width: 1280
+  height: 720
+  # backend: images -> папка со скриншотами (оффлайн-тесты)
+  images_dir: samples
+  # backend: video -> записанное видео
+  video_path: ""
+  image_loop: true
+
+loop:
+  hz: 4.0                 # частота основного цикла
+  debug_every: 0          # >0 -> сохранять кадр каждые N секунд в debug/
+
+input:
+  jitter_px: 3            # случайное смещение тапа, чтобы не выглядеть ботом
+  tap_hold_ms: 60
+  human_delay: [0.05, 0.15]
+
+vision:
+  threshold: 0.82
+  scales: [1.0]           # для эмуляторов с масштабированием: [0.9, 1.0, 1.1]
+  grayscale: true
+  templates_dir: demo_templates   # ЗАМЕНИТЕ на templates/ когда снимете свои шаблоны с игры
+
+# ---------------------------------------------------------------------------
+#  Полоски HUD.  fill_hsv - диапазон цвета ЗАПОЛНЕННОЙ части полоски.
+#  Значения по умолчанию: синяя полоска = жажда, оранжевая = еда, жёлтая = вес.
+# ---------------------------------------------------------------------------
+hud:
+  thirst:
+    region: [0.02, 0.05, 0.18, 0.025]
+    fill_hsv: [[90, 60, 90], [130, 255, 255]]
+    low: 0.25             # ниже этого - пить
+    critical: 0.12
+  food:
+    region: [0.02, 0.09, 0.18, 0.025]
+    fill_hsv: [[5, 80, 90], [35, 255, 255]]
+    low: 0.25             # ниже этого - есть
+    critical: 0.12
+  weight:
+    region: [0.72, 0.05, 0.24, 0.02]
+    fill_hsv: [[35, 70, 120], [65, 255, 255]]
+
+safety:
+  weight_limit_kg: 500    # АВТОСТОП после сбора 500 кг рыбы
+  max_consecutive_failures: 12
+  detect_stuck: true      # остановиться, если экран не меняется (бот завис)
+  stuck_seconds: 300
+  max_runtime_hours: 0    # 0 = без ограничения
+  pause_on_unknown_screen: true
+
+weight:
+  strategy: bar           # bar (средний вес) | ocr (читать счётчик веса)
+  avg_kg_per_fish: 1.0    # средний вес одной рыбы, кг
+  ocr_lang: eng
+  safety_margin_kg: 2.0   # стоп чуть раньше лимита
+  read_interval_catches: 1 # сверять оценку с полоской веса после каждого улова
+
+fishing:
+  cast_template: cast_button
+  enter_templates: []     # например [fishing_rod_icon, "fish_button"]
+  cast_timeout: 6.0
+  cast_retries: 3
+  cast_verify: true       # после нажатия кнопка заброса должна исчезнуть
+                          # (если в вашей сборке она остаётся - поставьте false)
+  cast_verify_timeout: 1.5
+  bite:
+    strategy: template    # template (иконка поклёвки) | motion (всплеск на воде)
+    template: bite
+    # ЗОНА ВОДЫ где видно поплавок/всплеск. По умолчанию НЕ ограничена,
+    # чтобы не прятать настоящую поклёвку (лучше проверить весь экран).
+    region: [0.0, 0.0, 1.0, 1.0]
+    diff_threshold: 0.006 # только для strategy: motion
+    timeout: 60.0
+    poll_hz: 6.0
+  reel:
+    mode: hold            # hold (удерживать зону) | tap (частые тапы)
+    region: [0.82, 0.78, 0.16, 0.16]
+    button: reel_button
+    max_seconds: 35.0
+    chunk_ms: 400
+    tap_interval_ms: 140
+  collect:
+    template: collect
+    timeout: 5.0
+    optional: true        # true = авто-лут, кнопка не нужна
+  indicators:
+    net_broken: net_broken
+    no_bait: no_bait
+    catch_icon: catch_icon
+  recast_delay: [1.0, 2.0]
+  after_broken_delay: [1.5, 3.0]
+
+# ---------------------------------------------------------------------------
+#  Еда и вода: срабатывает автоматически, когда полоска ниже low
+# ---------------------------------------------------------------------------
+survival:
+  enabled: true
+  eat_script: scripts/eat.yaml
+  drink_script: scripts/drink.yaml
+  cooldown_seconds: 20
+
+# ---------------------------------------------------------------------------
+#  Пополнение сеток из багажника машины
+# ---------------------------------------------------------------------------
+trunk:
+  enabled: true
+  script: scripts/trunk_restock.yaml
+  min_nets: 1
+  nets_region: [0.80, 0.86, 0.18, 0.10]   # где видно количество сеток в сумке
+  net_template: net_item
+  max_per_session: 12
+
+# ---------------------------------------------------------------------------
+#  Мусор на сетке (ловля на необозначенной территории)
+# ---------------------------------------------------------------------------
+trash:
+  enabled: true
+  script: scripts/clear_trash.yaml
+  template: trash_on_net
+  region: [0.18, 0.25, 0.44, 0.20]
+  trigger_count: 2
+  check_interval: 3.0
+
+# ---------------------------------------------------------------------------
+#  Ходьба / клавиши / чат-команды (используется в scripts/*.yaml)
+#  Amazing Online: WASD - движение, T - чат, Tab - инвентарь, E - меню.
+# ---------------------------------------------------------------------------
+moving:
+  enabled: false            # true = разрешить шагам walk/hold_key двигать персонажа
+  keys:
+    forward: w
+    backward: s
+    left: a
+    right: d
+    chat: t
+    inventory: tab
+    menu: e
+    enter: enter
+    handbrake: space
+    escape: escape
+  step_seconds: 0.6         # длительность одного шага по умолчанию
+  pause_seconds: 0.4
+  recover_after_failures: 3
+
+# ---------------------------------------------------------------------------
+#  QTE «убрать мусор из сетки»: игра показывает СЛУЧАЙНУЮ латинскую букву,
+#  её нужно удерживать до исчезновения подсказки. Бот её распознаёт.
+#  Нужен Tesseract OCR (иначе работает только геометрический фолбэк).
+# ---------------------------------------------------------------------------
+qte:
+  enabled: true
+  region: [0.30, 0.22, 0.40, 0.56]   # где искать букву (центр экрана)
+  glyph_scale: 5.0
+  min_confidence: 25
+  single_read_min_confidence: 65     # одно чтение должно быть очень уверенным
+  min_key_height_fraction: 0.028
+  max_center_distance_sq: 0.075
+  recognition_timeout_seconds: 1.2
+  stable_frames: 2                   # одинаковую букву надо увидеть 2 кадра
+  poll_seconds: 0.2
+  hold_timeout_seconds: 28
+  disappear_frames: 3                # буквы нет 3 кадра = сетка очищена
+  tesseract_cmd: ""                  # путь к tesseract.exe (если не в PATH)
+
+# ---------------------------------------------------------------------------
+#  Страховки экрана: загрузка/потеря соединения - ждём, а не падаем сразу
+# ---------------------------------------------------------------------------
+guards:
+  lost_connection: connection_lost
+  loading_screen: loading_screen
+  stable_frames: 3
+  pause_seconds: 20         # сколько ждать между проверками
+  max_consecutive_checks: 5 # 5 * 20с = 100с, потом стоп
+
+# ---------------------------------------------------------------------------
+#  Анти-АФК: бот "шевелится", пока вы занимаетесь своими делами
+# ---------------------------------------------------------------------------
+anti_afk:
+  enabled: true
+  interval: 45            # секунд между действиями
+  jitter: 8
+  mode: swipe             # swipe | tap
+  point: [0.5, 0.62]
+  swipe: [[0.48, 0.60], [0.52, 0.60]]
+  duration_ms: 220
+
+notify:
+  beep_on_stop: true
+  webhook_url: ""         # Discord/Telegram/Slack webhook (необязательно)
+
+state:
+  path: state/state.json
+
+logging:
+  level: INFO
+  file: logs/bot.log
+  debug_dir: debug
