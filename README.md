@@ -28,7 +28,40 @@
 * **ходьба и клавиши** — шаги `walk` / `hold_key` / `chat_command` в YAML;
 * **уведомление о стопе** — бип + опциональный webhook (Discord/Telegram).
 
-## Установка
+## Скачать готовый exe (Windows)
+
+Ничего ставить не нужно:
+
+**[⬇ AmazingBot — последняя сборка](https://github.com/FsbAidol/fyiuj-/releases/tag/latest)**
+
+* `AmazingBot-onefile-win64.zip` — **один exe**, распаковать и запустить (проще всего);
+* `AmazingBot-win64.zip` — папка с exe (стартует быстрее), внутри уже лежат
+  `config.yaml`, `templates/`, `scripts/`, демо-шаблоны и инструкция.
+
+Двойной клик по `AmazingBot.exe` (или `AmazingBot-onefile.exe`) → меню:
+
+```
+1) Запустить бота
+2) Проверка (check) — конфиг, шаблоны, устройство
+3) Диагностика (doctor)
+4) Прогон на симуляторе (demo, без игры)
+5) Открыть папку логов
+6) Открыть config.yaml
+0) Выход
+```
+
+Сборка идёт автоматически на Windows-раннере GitHub Actions
+(`.github/workflows/build-exe.yml`): сначала тесты, потом PyInstaller, смоук-тест
+exe и публикация в Release. Пересобрать локально: `tools\build_exe.bat`
+(или `pyinstaller tools/amazingbot.spec`).
+
+> Антивирус может ругаться на «неизвестный exe» — это нормально для
+> неподписанных сборок PyInstaller. UPX отключён специально, чтобы меньше
+> походить на упаковщик; можно добавить папку в исключения.
+> Нужны **Visual C++ Redistributable** (обычно уже стоят) и, для буквы QTE,
+> Tesseract OCR — но и без него бот работает.
+
+## Установка из исходников
 
 ```bash
 python -m venv .venv
