@@ -125,7 +125,35 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Create release
+      # a permanent "latest" release: the Actions artifact needs a GitHub login,
+      # the Release download does not - this is the link to hand to users
+      - name: Update latest release
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/arena/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "latest"
+          $notes = @"
+          Готовый бот для Amazing Online (автосборка из ветки ``${{ github.ref_name }}``, коммит ${{ github.sha }}).
+
+          **Как запустить**
+          1. Скачайте ``AmazingBot-win64.zip`` и распакуйте в любую папку.
+          2. Запустите ``AmazingBot.exe`` - откроется меню.
+          3. Сначала пункт «Прогон на симуляторе» (проверка без игры), потом «Запустить бота».
+          4. Для реальной игры снимите свои шаблоны в папку ``templates\`` и укажите её в ``config.yaml``.
+
+          В архиве: exe, config.yaml, templates, scripts, demo_templates, docs и инструкция.
+          "@
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --title "AmazingBot (последняя сборка)" --notes "$notes"
+            gh release upload $tag AmazingBot-win64.zip --clobber
+          } else {
+            gh release create $tag AmazingBot-win64.zip --title "AmazingBot (последняя сборка)" --notes "$notes" --latest
+          }
+
+      - name: Create versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
