@@ -130,6 +130,31 @@ jobs:
           Compress-Archive -Path dist/AmazingBot/* -DestinationPath AmazingBot-win64.zip
           Compress-Archive -Path dist/onefile/* -DestinationPath AmazingBot-onefile-win64.zip
 
+      - name: Verify archive contents
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $required = @{
+            "AmazingBot-win64.zip"          = @("AmazingBot.exe", "config.yaml", "scripts/eat.yaml",
+                                                "demo_templates/cast_button.png", "ЧИТАЙ_МЕНЯ.txt")
+            "AmazingBot-onefile-win64.zip"  = @("AmazingBot.exe", "config.yaml")
+          }
+          $bad = @()
+          foreach ($zip in $required.Keys) {
+            $names = ([System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip))).Entries |
+                       ForEach-Object { $_.FullName -replace '\\', '/' }
+            Write-Host "== $zip =="
+            $names | Sort-Object | Select-Object -First 12 | ForEach-Object { Write-Host "   $_" }
+            Write-Host "   ... ($($names.Count) entries)"
+            foreach ($need in $required[$zip]) {
+              if (-not ($names | Where-Object { $_ -eq $need -or $_.EndsWith("/$need") })) {
+                $bad += "$zip -> missing $need"
+              }
+            }
+          }
+          if ($bad) { throw ($bad -join "; ") }
+          Write-Host "archives look complete"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
