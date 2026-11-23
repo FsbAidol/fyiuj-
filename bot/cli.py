@@ -19,18 +19,20 @@ from pathlib import Path
 
 from . import __version__
 from .config import Config, ConfigError
+from .paths import app_dir, default_config
 from .logging_setup import setup_logging
 from .state import StateStore
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("-c", "--config", default="config.yaml", help="path to config.yaml")
+    parser.add_argument("-c", "--config", default=str(default_config()),
+                        help="path to config.yaml (default: next to the exe)")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="bot",
+        prog="AmazingBot",
         description="Vision-based fishing automation for Amazing Online",
     )
     parser.add_argument("--version", action="version", version=f"amazing-bot {__version__}")

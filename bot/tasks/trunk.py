@@ -64,9 +64,8 @@ class TrunkTask(BaseTask):
         return script
 
     def _close_windows_before(self) -> None:
-        for name in ("trunk_window", "bag_button", "close_button"):
-            if name == "bag_button":
-                continue
+        """Leftover windows must not block the trunk routine."""
+        for name in ("trunk_window", "close_button"):
             if self.a.exists(name):
                 self.a.tap_template(name)
                 self.a.sleep(0.3)

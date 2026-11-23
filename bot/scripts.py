@@ -51,6 +51,7 @@ import yaml
 
 from .actions import Actions
 from .geometry import Region
+from .paths import find_file
 
 MAX_DEPTH = 6
 
@@ -71,6 +72,11 @@ class Script:
     @classmethod
     def from_file(cls, path: str | Path) -> "Script":
         p = Path(path)
+        if not p.exists() and not p.is_absolute():
+            # a relative name may also come from the bundled exe data
+            found = find_file(str(p))
+            if found is not None:
+                p = found
         if not p.exists():
             raise ScriptError(f"script not found: {p}")
         with p.open("r", encoding="utf-8") as fh:

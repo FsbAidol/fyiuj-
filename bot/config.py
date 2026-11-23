@@ -169,7 +169,7 @@ class Config:
             data = yaml.safe_load(fh) or {}
         if not isinstance(data, Mapping):
             raise ConfigError(f"{p}: top level must be a mapping")
-        cfg = cls(data, p)
+        cfg = cls(data, p.resolve())
         cfg.validate()
         return cfg
 
@@ -226,13 +226,23 @@ class Config:
             raise ConfigError(f"{dotted} must be a pair, got {value!r}") from exc
 
     def path_of(self, dotted: str, default: str = "") -> Path:
+        """Absolute path for a config value.
+
+        Relative values are resolved against the config file's folder (not the
+        process CWD), so a double-clicked exe and ``python -m bot`` behave the
+        same.  Missing keys fall back to ``default``.
+        """
         value = str(self.get(dotted, default) or "")
+        if not value:
+            value = default
         p = Path(value)
-        return p if p.is_absolute() else (self.base_dir / p)
+        if p.is_absolute():
+            return p
+        base = self.base_dir if self.path is not None else Path.cwd()
+        return (base / p).resolve()
 
     def template_dir(self) -> Path:
-        p = self.path_of("vision.templates_dir", "templates")
-        return p
+        return self.path_of("vision.templates_dir", "templates")
 
     # ------------------------------------------------------------------ validate
     def validate(self) -> None:
