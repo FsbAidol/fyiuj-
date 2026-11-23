@@ -38,6 +38,8 @@ jobs:
     name: exe (windows)
     needs: test
     runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
 
@@ -82,13 +84,33 @@ jobs:
           "@ | Set-Content -Encoding UTF8 "$dist/ЧИТАЙ_МЕНЯ.txt"
           Copy-Item docs "$dist/docs" -Recurse -Force
 
-      - name: Smoke test (exe starts and prints help)
+      - name: Smoke test (exe starts, imports everything, menu renders)
         shell: pwsh
         run: |
           $exe = "dist/AmazingBot/AmazingBot.exe"
-          & $exe --version
+
+          # 1) CLI works and the bundle is intact
+          $version = & $exe --version 2>&1 | Out-String
+          Write-Host $version
           if ($LASTEXITCODE -ne 0) { throw "--version failed" }
-          & $exe check 2>&1 | Out-String | Write-Host
+          if ($version -notmatch "amazing-bot") { throw "unexpected version output" }
+
+          # 2) the real imports (cv2, yaml, mss, pyautogui, pynput) load in the
+          #    frozen build: `check` touches config, templates, scripts, OCR,
+          #    hotkeys and the device layer. It may exit 1 (no adb in CI) - that
+          #    is fine, a crash/traceback is not.
+          $check = & $exe check 2>&1 | Out-String
+          Write-Host $check
+          if ($check -match "Traceback|ModuleNotFoundError|ImportError") {
+            throw "frozen build is missing modules"
+          }
+          if ($check -notmatch "RESULT:") { throw "check did not run" }
+
+          # 3) menu renders when double-clicked (no args); feed it "0" to quit
+          $menu = "0" | & $exe 2>&1 | Out-String
+          Write-Host $menu
+          if ($menu -notmatch "Amazing Online bot") { throw "launcher menu did not render" }
+          exit 0
 
       - name: Zip
         shell: pwsh

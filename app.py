@@ -13,7 +13,28 @@ import os
 import sys
 
 
+def _force_utf8_streams() -> None:
+    """Windows consoles default to cp1251/cp866: never crash on Cyrillic output."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # pragma: no cover - redirected stream
+            pass
+
+
 def _prepare_frozen_env() -> None:
+    _force_utf8_streams()
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
+        try:  # nicer window title
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleTitleW("AmazingBot - Amazing Online")
+        except Exception:  # pragma: no cover - console may be redirected
+            pass
     if not getattr(sys, "frozen", False):
         return
     from bot.paths import app_dir
