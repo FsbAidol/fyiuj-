@@ -63,6 +63,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data)
 
+# --- single-file build (AmazingBot-onefile.exe) -----------------------------
+# Handy for "just download one file and run it". Slower to start (it unpacks
+# to %TEMP% once) and config.yaml/templates still live next to the exe.
+onefile = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name="AmazingBot-onefile",
+    debug=False,
+    strip=False,
+    upx=False,
+    console=True,
+    runtime_tmpdir=None,
+    disable_windowed_traceback=False,
+)
+
 exe = EXE(
     pyz,
     a.scripts,

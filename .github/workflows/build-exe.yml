@@ -84,6 +84,14 @@ jobs:
           "@ | Set-Content -Encoding UTF8 "$dist/ЧИТАЙ_МЕНЯ.txt"
           Copy-Item docs "$dist/docs" -Recurse -Force
 
+      - name: Smoke test one-file exe
+        shell: pwsh
+        run: |
+          $exe = "dist/AmazingBot-onefile.exe"
+          $version = & $exe --version 2>&1 | Out-String
+          Write-Host $version
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch "amazing-bot") { throw "onefile exe broken" }
+
       - name: Smoke test (exe starts, imports everything, menu renders)
         shell: pwsh
         run: |
@@ -115,13 +123,20 @@ jobs:
       - name: Zip
         shell: pwsh
         run: |
+          # the one-file exe needs nothing but a config beside it
+          New-Item -ItemType Directory -Force -Path dist/onefile | Out-Null
+          Copy-Item dist/AmazingBot-onefile.exe dist/onefile/AmazingBot.exe -Force
+          Copy-Item config.yaml dist/onefile/
           Compress-Archive -Path dist/AmazingBot/* -DestinationPath AmazingBot-win64.zip
+          Compress-Archive -Path dist/onefile/* -DestinationPath AmazingBot-onefile-win64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: AmazingBot-windows
-          path: AmazingBot-win64.zip
+          path: |
+            AmazingBot-win64.zip
+            AmazingBot-onefile-win64.zip
           retention-days: 30
           if-no-files-found: error
 
@@ -148,9 +163,10 @@ jobs:
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release edit $tag --title "AmazingBot (последняя сборка)" --notes "$notes"
-            gh release upload $tag AmazingBot-win64.zip --clobber
+            gh release upload $tag AmazingBot-win64.zip AmazingBot-onefile-win64.zip --clobber
           } else {
-            gh release create $tag AmazingBot-win64.zip --title "AmazingBot (последняя сборка)" --notes "$notes" --latest
+            gh release create $tag AmazingBot-win64.zip AmazingBot-onefile-win64.zip \
+              --title "AmazingBot (последняя сборка)" --notes "$notes" --latest
           }
 
       - name: Create versioned release
@@ -168,9 +184,10 @@ jobs:
           "@
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag AmazingBot-win64.zip --clobber
+            gh release upload $tag AmazingBot-win64.zip AmazingBot-onefile-win64.zip --clobber
           } else {
-            gh release create $tag AmazingBot-win64.zip --title "AmazingBot $tag" --notes "$notes"
+            gh release create $tag AmazingBot-win64.zip AmazingBot-onefile-win64.zip \
+              --title "AmazingBot $tag" --notes "$notes"
           }
 
   build-desktop:
