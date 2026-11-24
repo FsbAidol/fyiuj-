@@ -80,6 +80,8 @@ jobs:
           2. Для реальной игры: положите свои шаблоны в папку templates\
              и укажите её в config.yaml (vision.templates_dir: templates).
           3. Для проверки без игры: меню -> "Прогон на симуляторе".
+          4. Логи лежат в папке logs\ рядом с exe (меню -> пункт 5).
+             Если бот упал: logs\bot.log и logs\crash-*.txt.
           Подробности: docs\КАК_ЗАПУСТИТЬ.md
           "@ | Set-Content -Encoding UTF8 "$dist/ЧИТАЙ_МЕНЯ.txt"
           Copy-Item docs "$dist/docs" -Recurse -Force
@@ -113,6 +115,16 @@ jobs:
             throw "frozen build is missing modules"
           }
           if ($check -notmatch "RESULT:") { throw "check did not run" }
+
+          # 2b) the log file must actually receive something (users report an
+          #     empty bot.log as a bug - it must never be 0 bytes)
+          $log = "dist/AmazingBot/logs/bot.log"
+          if (-not (Test-Path $log)) { throw "bot.log was not created" }
+          $logText = Get-Content $log -Raw -Encoding UTF8
+          Write-Host $logText
+          if ($logText -notmatch "AmazingBot" -or $logText -notmatch "command=check") {
+            throw "bot.log is empty or missing the startup banner"
+          }
 
           # 3) menu renders when double-clicked (no args); feed it "0" to quit
           $menu = "0" | & $exe 2>&1 | Out-String

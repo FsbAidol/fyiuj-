@@ -15,12 +15,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
 from .config import Config, ConfigError
 from .paths import app_dir, default_config
-from .logging_setup import setup_logging
+from .logging_setup import log_startup_banner, setup_logging
 from .state import StateStore
 
 
@@ -83,9 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_run(args: argparse.Namespace) -> int:
     from .runner import BotRunner, RunOptions
 
-    cfg = Config.load(args.config)
+    cfg, log = _start(args, "run")
     cfg.ensure_dirs()
-    log = setup_logging(cfg, verbose=args.verbose)
 
     state_store = StateStore(cfg.path_of("state.path"))
     previous = state_store.load()
@@ -117,20 +117,42 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if state.stop_reason in {"weight_limit_reached", "runtime_limit", "finished"} else 1
 
 
+def _start(args: argparse.Namespace, command: str) -> tuple[Config, "logging.Logger"]:
+    """Load config + logging and always write a startup banner to the log file."""
+    import logging as _logging
+
+    from . import logging_setup
+
+    try:
+        cfg = Config.load(args.config)
+    except Exception as exc:  # noqa: BLE001 - broken config must still be logged
+        # no usable config: still log the attempt, then re-raise
+        log = logging_setup.setup_logging(None, verbose=getattr(args, "verbose", False))
+        logging_setup.log_startup_banner(log, command, str(args.config))
+        log.error("config could not be loaded: %s (%s: %s)",
+                  args.config, type(exc).__name__, exc)
+        raise
+    log = setup_logging(cfg, verbose=getattr(args, "verbose", False))
+    log_startup_banner(log, command, str(args.config))
+    return cfg, log
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     from .tools.check import run_checks
 
-    cfg = Config.load(args.config)
-    setup_logging(cfg, verbose=args.verbose)
-    return 0 if run_checks(cfg) else 1
+    cfg, log = _start(args, "check")
+    result = run_checks(cfg)
+    log.info("check finished: %s", "OK" if result else "problems found")
+    return 0 if result else 1
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .tools.check import doctor_report
 
-    cfg = Config.load(args.config)
-    setup_logging(cfg, verbose=args.verbose)
-    return 0 if doctor_report(cfg) else 1
+    cfg, log = _start(args, "doctor")
+    result = doctor_report(cfg)
+    log.info("doctor finished: %s", "OK" if result else "problems found")
+    return 0 if result else 1
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
@@ -138,8 +160,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
     from .device.capture import build_capture
 
-    cfg = Config.load(args.config)
-    setup_logging(cfg, verbose=args.verbose)
+    cfg, log = _start(args, "snapshot")
     cap = build_capture(cfg)
     try:
         frame = cap.grab()
@@ -149,6 +170,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out), frame)
     h, w = frame.shape[:2]
+    log.info("snapshot saved: %s (%sx%s)", out, w, h)
     print(f"saved {out} ({w}x{h})")
     return 0
 
@@ -156,20 +178,29 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 def cmd_calibrate(args: argparse.Namespace) -> int:
     from .tools.calibrate import interactive_calibration
 
-    cfg = Config.load(args.config)
-    setup_logging(cfg, verbose=args.verbose)
-    return interactive_calibration(cfg)
+    cfg, log = _start(args, "calibrate")
+    result = interactive_calibration(cfg)
+    log.info("calibration finished (exit %s)", result)
+    return result
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
     from .tools.demo_run import run_demo
 
     cfg = Config.load(args.config)
+    log = _start_logging_for_demo(cfg, args)
+    log_startup_banner(log, "demo", str(args.config))
     return run_demo(cfg, args)
 
 
+def _start_logging_for_demo(cfg: Config, args: argparse.Namespace):
+    """run_demo() sets up logging itself (with the simulator templates)."""
+    return setup_logging(cfg, verbose=getattr(args, "verbose", False))
+
+
 def cmd_state(args: argparse.Namespace) -> int:
-    cfg = Config.load(args.config)
+    cfg, log = _start(args, "state")
+    _ = log
     store = StateStore(cfg.path_of("state.path"))
     state = store.load()
     if state is None:
@@ -181,11 +212,49 @@ def cmd_state(args: argparse.Namespace) -> int:
 
 
 def cmd_reset(args: argparse.Namespace) -> int:
-    cfg = Config.load(args.config)
+    cfg, log = _start(args, "reset")
     store = StateStore(cfg.path_of("state.path"))
     state = store.reset()
+    log.warning("state reset by user request")
     print(f"state reset: {state.summary()}")
     return 0
+
+
+def _crash_dir() -> "Path":
+    from .paths import app_dir
+
+    return app_dir() / "logs"
+
+
+def _log_crash(error: BaseException | None, command: str) -> None:
+    """Write the traceback both to the log file and to a standalone crash file."""
+    import logging as _logging
+    import traceback
+
+    logger = _logging.getLogger("bot")
+    if error is not None:
+        logger.exception("unhandled error in command %r: %s", command, error)
+    else:
+        logger.error("command %r failed (see console output)", command)
+    try:
+        directory = _crash_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = directory / f"crash-{stamp}.txt"
+        with path.open("w", encoding="utf-8") as fh:
+            fh.write(f"AmazingBot crash report\ncommand: {command}\n")
+            fh.write(f"time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            if error is not None:
+                fh.write("".join(traceback.format_exception(type(error), error, error.__traceback__)))
+        print(f"crash report: {path}", file=sys.stderr)
+    except OSError:  # pragma: no cover - read-only folder
+        pass
+
+
+def _log_interrupt(command: str) -> None:
+    import logging as _logging
+
+    _logging.getLogger("bot").warning("command %r interrupted by the user", command)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -205,7 +274,15 @@ def main(argv: list[str] | None = None) -> int:
         return handlers[args.command](args)
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
+        _log_crash(outdir=None, command=args.command)
         return 2
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
+        _log_interrupt(args.command)
         return 130
+    except Exception as exc:  # noqa: BLE001 - a CLI must never die silently
+        _log_crash(exc, command=args.command)
+        print(f"\nERROR: {exc}\n"
+              f"Подробности в logs/bot.log и logs/crash_*.txt\n"
+              f"Запустите: AmazingBot doctor  (или python -m bot doctor)", file=sys.stderr)
+        return 1

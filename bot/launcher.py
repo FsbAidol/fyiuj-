@@ -9,7 +9,7 @@ argparse errors:
     4) Прогон на симуляторе (demo)
     5) Открыть папку логов
     6) Открыть config.yaml
-    7) Выход
+    0) Выход
 
 Everything is still scriptable: ``AmazingBot.exe run --dry-run`` works exactly
 like the module CLI.
@@ -52,6 +52,41 @@ def _open_path(path: Path) -> None:
         print(f"Не удалось открыть {path}: {exc}")
 
 
+def _log_dir() -> Path:
+    """Folder that actually receives bot.log (``logging.file`` from config)."""
+    from .config import Config
+    from .paths import default_config
+
+    try:
+        cfg = Config.load(default_config())
+        return cfg.path_of("logging.file", "logs/bot.log").parent
+    except Exception:  # noqa: BLE001 - broken/missing config: still point somewhere
+        return _app_dir() / "logs"
+
+
+def _log_file() -> Path:
+    from .config import Config
+    from .paths import default_config
+
+    try:
+        cfg = Config.load(default_config())
+        return cfg.path_of("logging.file", "logs/bot.log")
+    except Exception:  # noqa: BLE001
+        return _app_dir() / "logs" / "bot.log"
+
+
+def _report_log(exit_code: int, args: list[str]) -> None:
+    """Always show where the log went: users look for it after a silent failure."""
+    path = _log_file()
+    if path.exists() and path.stat().st_size:
+        print(f"\n  лог: {path} ({path.stat().st_size} байт)")
+    elif exit_code != 0:
+        print(f"\n  лог пуст или не создан: {path}")
+        print("  проверьте, что папка доступна для записи (не Program Files, не архив)")
+    else:
+        print(f"\n  лог: {path}")
+
+
 def _first_run_help(exit_code: int) -> None:
     if exit_code != 2:
         return
@@ -71,7 +106,7 @@ def menu() -> int:
         print("  2) Проверка (check) — конфиг, шаблоны, устройство")
         print("  3) Диагностика (doctor)")
         print("  4) Прогон на симуляторе (demo, без игры)")
-        print("  5) Открыть папку логов")
+        print(f"  5) Открыть папку логов ({_log_dir()})")
         print("  6) Открыть config.yaml")
         print("  0) Выход")
         try:
@@ -85,15 +120,26 @@ def menu() -> int:
             args = ["run"]
             if extra in {"y", "yes", "д", "да"}:
                 args.append("--dry-run")
-            _first_run_help(cli_main(args))
+            code = cli_main(args)
+            _report_log(code, args)
+            _first_run_help(code)
         elif choice in {"2", "check"}:
-            _first_run_help(cli_main(["check"]))
+            code = cli_main(["check"])
+            _report_log(code, ["check"])
+            _first_run_help(code)
         elif choice in {"3", "doctor"}:
-            _first_run_help(cli_main(["doctor"]))
+            code = cli_main(["doctor"])
+            _report_log(code, ["doctor"])
+            _first_run_help(code)
         elif choice in {"4", "demo"}:
-            _first_run_help(cli_main(["demo", "--kg", "500", "--fish-kg", "5", "--speed", "120"]))
+            args = ["demo", "--kg", "500", "--fish-kg", "5", "--speed", "120"]
+            code = cli_main(args)
+            _report_log(code, args)
+            _first_run_help(code)
         elif choice in {"5", "logs"}:
-            _open_path(app / "logs")
+            directory = _log_dir()
+            print(f"  логи: {_log_file()}")
+            _open_path(directory)
         elif choice in {"6", "config"}:
             target = app / "config.yaml"
             if target.exists():
